@@ -1,8 +1,25 @@
+//! Integration tests for the vtt-to-md CLI tool.
+//!
+//! These tests validate the end-to-end functionality of the tool by executing
+//! the compiled binary with various inputs and flags, verifying both successful
+//! conversions and appropriate error handling.
+//!
+//! Test coverage includes:
+//! - Basic conversion functionality
+//! - All CLI flags (--force, --no-clobber, --stdout, --unknown-speaker, --include-timestamps)
+//! - Error conditions with correct exit codes (66, 65, 73)
+//! - Path handling (spaces, custom output)
+//! - Speaker consolidation
+
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
 
+/// Get the path to the compiled vtt-to-md executable for testing.
+///
+/// This function locates the test binary in the target directory,
+/// adjusting for platform-specific executable names (.exe on Windows).
 fn get_vtt_to_md_path() -> PathBuf {
     let mut path = std::env::current_exe().expect("Failed to get current executable path");
     path.pop(); // Remove test executable name
