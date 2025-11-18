@@ -5,8 +5,6 @@
 //! It includes text sanitization, HTML entity decoding, and robust error handling for
 //! malformed VTT content.
 
-#![allow(dead_code)]
-
 use crate::error::VttError;
 use regex::Regex;
 use std::fs;

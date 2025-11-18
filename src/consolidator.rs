@@ -23,8 +23,6 @@
 //! assert_eq!(segments[0].text, "Hello. How are you?");
 //! ```
 
-#![allow(dead_code)]
-
 use crate::cli::TimestampMode;
 use crate::parser::Cue;
 
