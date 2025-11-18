@@ -11,8 +11,8 @@ The project is currently scaffolded with:
 - `src/main.rs`: Basic "Hello, world!" placeholder
 - `README.md`: Basic build/run instructions
 
-**Key Constraints Discovered:**
-- Rust 2024 edition support is available
+**Key Constraints:**
+- Rust 2024 edition support available
 - No existing dependencies to migrate
 - Clean slate for architecture decisions
 - Cross-platform compilation required (Windows, Linux, macOS)
@@ -54,1218 +54,674 @@ A production-ready CLI executable that:
 We'll build incrementally in six phases, each producing a testable artifact:
 
 1. **Project Setup**: Configure dependencies, error types, exit codes
-2. **CLI Parsing**: Implement argument/flag parsing with clap
+2. **CLI Parsing**: Implement argument/flag parsing
 3. **VTT Parser**: Build robust parser for WebVTT format with speaker extraction
 4. **Consolidation**: Implement speaker-turn consolidation logic
 5. **Markdown Generation**: Format and write output with proper escaping
-6. **Testing**: Add unit tests, integration tests, and manual test cases
+6. **Testing**: Add comprehensive test coverage
 
 Each phase includes both automated verification (cargo commands) and manual verification (testing with real VTT files).
 
+## Architecture Overview
+
+### Module Structure
+```
+src/
+├── main.rs           # Entry point, CLI orchestration, error handling
+├── cli.rs            # Argument parsing and validation
+├── parser.rs         # VTT file parsing and cue extraction
+├── consolidator.rs   # Speaker segment consolidation
+├── markdown.rs       # Markdown generation and file output
+└── error.rs          # Error types and exit code mapping
+```
+
+### Data Flow
+```
+VTT File → Parser → Cues → Consolidator → Segments → Markdown → Output File/Stdout
+                ↓                                        ↓
+            Validation                              Error Handling
+```
+
+### Key Design Decisions
+
+**Error Handling Strategy:**
+- Use `thiserror` for custom error types with clear messages
+- Use `anyhow` for error context in application logic
+- Map errors to BSD sysexits.h conventions (EX_NOINPUT=66, EX_NOPERM=77, EX_DATAERR=65, EX_IOERR=74, EX_CANTCREAT=73, EX_USAGE=64)
+- Never panic on expected errors; return appropriate exit codes
+
+**Parsing Strategy:**
+- Use regex for pattern matching (`<v>` tags, timestamps)
+- Be permissive: skip unknown blocks (NOTE, STYLE, REGION), handle missing tags
+- Validate WEBVTT header exists at file start
+- Strip/normalize whitespace and decode HTML entities (&amp;, &lt;, etc.)
+
+**Speaker Handling:**
+- Extract from `<v Speaker>text</v>` voice tags
+- Sanitize: remove @ symbols, apply Unicode NFC normalization, escape Markdown special chars
+- Default to configurable label (e.g., "Unknown") when speaker missing
+- Consolidate consecutive same-speaker cues with intelligent whitespace joining
+
+**CLI Design:**
+- Positional: input file (required), output file (optional, defaults to input.md)
+- Flags: --force (overwrite), --no-clobber (skip if exists), --stdout (print instead of write)
+- Options: --unknown-speaker (custom label), --include-timestamps (none/first/each)
+- Default behavior: safe (error if output exists, require explicit --force)
+
+**Output Format:**
+- Markdown paragraphs: `**SpeakerName:** consolidated text`
+- Double newline between speaker turns
+- Optional timestamps: `[HH:MM:SS.mmm] **Speaker:** text`
+
+---
+
 ## Phase 1: Project Setup and Dependencies
 
-### Overview
-Configure Cargo.toml with required dependencies, define error types following sysexits conventions, and set up the module structure for clean separation of concerns.
+### Objective
+Establish the foundational project structure with appropriate dependencies and error handling infrastructure that will support all subsequent phases.
 
-### Changes Required:
+### What Needs to Be Done
 
-#### 1. Update Cargo.toml
-**File**: `Cargo.toml`
-**Changes**: Add dependencies for CLI parsing, error handling, regex, and Unicode normalization
+#### Dependencies to Add
+Update `Cargo.toml` with:
+- **clap** (v4.5+): CLI argument parsing with derive macros, colored help text, and suggestions
+- **thiserror** (v1.0+): Define custom error types with Display implementations
+- **anyhow** (v1.0+): Error context chaining for application-level error handling
+- **regex** (v1.10+): Pattern matching for VTT voice tags and timestamps
+- **unicode-normalization** (v0.1+): NFC normalization for speaker names
 
-```toml
-[package]
-name = "vtt-to-md"
-version = "0.1.0"
-edition = "2024"
+**Rationale**: These dependencies align with Rust ecosystem best practices and provide the necessary tools without excessive complexity. Clap's derive feature offers ergonomic CLI definition. The thiserror/anyhow combination separates library errors (thiserror) from application errors (anyhow).
 
-[dependencies]
-clap = { version = "4.5", features = ["derive", "color", "suggestions"] }
-anyhow = "1.0"
-thiserror = "1.0"
-regex = "1.10"
-unicode-normalization = "0.1"
-```
+#### Error Type System
+Create `src/error.rs` defining a `VttError` enum with variants for:
+- File I/O errors (read, write, not found, permission denied)
+- Parse errors (invalid VTT format, missing header, malformed content)
+- Application errors (output file exists, input/output same file)
 
-**Rationale**: 
-- `clap` with derive feature for ergonomic CLI definition
-- `anyhow` for easy error context chaining
-- `thiserror` for defining custom error types
-- `regex` for VTT pattern matching
-- `unicode-normalization` for speaker name sanitization (NFC normalization)
+Each error variant must:
+- Include relevant context (file paths, reasons)
+- Map to appropriate BSD sysexits.h exit codes
+- Provide clear, actionable error messages
 
-#### 2. Create error module
-**File**: `src/error.rs`
-**Changes**: Define custom error types and exit code mapping
+**Exit Code Mapping:**
+- 0: Success
+- 64 (EX_USAGE): CLI usage errors
+- 65 (EX_DATAERR): VTT parse errors, invalid data
+- 66 (EX_NOINPUT): Input file not found
+- 73 (EX_CANTCREAT): Output file already exists (without --force)
+- 74 (EX_IOERR): File I/O errors
+- 77 (EX_NOPERM): Permission denied
 
-```rust
-use std::process::ExitCode;
-use thiserror::Error;
+#### Module Scaffolding
+Create empty module files with documentation comments describing their purpose:
+- `src/cli.rs`: Will handle command-line argument parsing
+- `src/parser.rs`: Will parse VTT files and extract cues
+- `src/consolidator.rs`: Will consolidate speaker segments
+- `src/markdown.rs`: Will generate Markdown output
 
-#[derive(Error, Debug)]
-pub enum VttError {
-    #[error("Failed to read file: {path}")]
-    FileRead { path: String, source: std::io::Error },
-    
-    #[error("Failed to write file: {path}")]
-    FileWrite { path: String, source: std::io::Error },
-    
-    #[error("File not found: {path}")]
-    FileNotFound { path: String },
-    
-    #[error("Permission denied: {path}")]
-    PermissionDenied { path: String },
-    
-    #[error("Failed to parse VTT file: {reason}")]
-    ParseError { reason: String },
-    
-    #[error("Invalid UTF-8 in file: {path}")]
-    InvalidUtf8 { path: String },
-    
-    #[error("Output file already exists: {path} (use --force to overwrite)")]
-    OutputExists { path: String },
-    
-    #[error("Cannot overwrite input file: {path}")]
-    InputOutputSame { path: String },
-}
+Update `src/main.rs` to declare these modules and establish the basic entry point structure with proper error handling (returning ExitCode).
 
-impl VttError {
-    pub fn exit_code(&self) -> ExitCode {
-        match self {
-            VttError::FileNotFound { .. } => ExitCode::from(66), // EX_NOINPUT
-            VttError::PermissionDenied { .. } => ExitCode::from(77), // EX_NOPERM
-            VttError::ParseError { .. } | VttError::InvalidUtf8 { .. } => ExitCode::from(65), // EX_DATAERR
-            VttError::FileRead { .. } | VttError::FileWrite { .. } => ExitCode::from(74), // EX_IOERR
-            VttError::OutputExists { .. } | VttError::InputOutputSame { .. } => ExitCode::from(73), // EX_CANTCREAT
-        }
-    }
-}
-```
+### Success Criteria
 
-**Rationale**: Following BSD sysexits.h conventions for cross-platform consistency. Each error variant maps to specific exit codes that scripts can handle programmatically.
+#### Automated Verification
+- [ ] Project compiles cleanly: `cargo build`
+- [ ] All dependencies resolve: `cargo check`
+- [ ] No clippy warnings: `cargo clippy -- -D warnings`
+- [ ] Code formatting is correct: `cargo fmt --check`
+- [ ] Error types compile and can be instantiated
 
-#### 3. Update main.rs module structure
-**File**: `src/main.rs`
-**Changes**: Set up module declarations and main function skeleton
+#### Manual Verification
+- [ ] Review `Cargo.toml` dependencies match requirements
+- [ ] Verify error module defines all required variants per Spec.md
+- [ ] Confirm exit codes follow sysexits.h conventions
+- [ ] Check module structure is clean and documented
+- [ ] Ensure error messages are user-friendly and actionable
 
-```rust
-mod error;
-mod cli;
-mod parser;
-mod consolidator;
-mod markdown;
-
-use std::process::ExitCode;
-use error::VttError;
-
-fn main() -> ExitCode {
-    // CLI parsing will be added in Phase 2
-    println!("VTT to MD converter - Phase 1 complete");
-    ExitCode::SUCCESS
-}
-```
-
-#### 4. Create module files
-**Files**: Create empty module files for future phases
-- `src/cli.rs` (Phase 2)
-- `src/parser.rs` (Phase 3)
-- `src/consolidator.rs` (Phase 4)
-- `src/markdown.rs` (Phase 5)
-
-```rust
-// src/cli.rs
-// CLI parsing module - to be implemented in Phase 2
-
-// src/parser.rs
-// VTT parsing module - to be implemented in Phase 3
-
-// src/consolidator.rs
-// Speaker consolidation module - to be implemented in Phase 4
-
-// src/markdown.rs
-// Markdown generation module - to be implemented in Phase 5
-```
-
-### Success Criteria:
-
-#### Automated Verification:
-- [ ] Project builds successfully: `cargo build`
-- [ ] Dependencies resolve without conflicts: `cargo check`
-- [ ] No compiler warnings: `cargo clippy`
-- [ ] Code formatting passes: `cargo fmt --check`
-
-#### Manual Verification:
-- [ ] Cargo.toml lists all required dependencies with correct versions
-- [ ] error.rs defines all error variants from Spec.md requirements
-- [ ] Exit codes match sysexits.h conventions (64, 65, 66, 73, 74, 77)
-- [ ] Module structure is clear and follows Rust conventions
+#### Critical Questions to Answer
+- Are there any dependency conflicts or version issues?
+- Do error messages provide enough context for users to take action?
+- Is the module structure intuitive and maintainable?
 
 ---
 
 ## Phase 2: CLI Argument Parsing
 
-### Overview
-Implement command-line interface using clap with derive macros. Handle positional arguments for input/output paths and flags for behavior control (--force, --no-clobber, --stdout, --unknown-speaker, --include-timestamps).
+### Objective
+Implement a user-friendly command-line interface that accepts file paths, validates arguments, and provides clear help documentation and error messages.
 
-### Changes Required:
+### What Needs to Be Done
 
-#### 1. Define CLI structure with clap
-**File**: `src/cli.rs`
-**Changes**: Create Args struct with clap derive macros
+#### Argument Structure
+Define CLI using clap's derive macros in `src/cli.rs`:
 
-```rust
-use clap::{Parser, ValueEnum};
-use std::path::PathBuf;
+**Positional Arguments:**
+- `input`: Required path to VTT file
+- `output`: Optional path to output MD file (defaults to input filename with .md extension)
 
-#[derive(Parser, Debug)]
-#[command(name = "vtt-to-md")]
-#[command(about = "Convert WebVTT transcript files to Markdown format", long_about = None)]
-#[command(version)]
-pub struct Args {
-    /// Input VTT file path
-    #[arg(value_name = "INPUT")]
-    pub input: PathBuf,
+**Flags:**
+- `--force` / `-f`: Overwrite existing output file
+- `--no-clobber` / `-n`: Skip conversion if output exists
+- `--stdout`: Print Markdown to stdout instead of writing file
 
-    /// Output Markdown file path (defaults to input name with .md extension)
-    #[arg(value_name = "OUTPUT")]
-    pub output: Option<PathBuf>,
+**Options:**
+- `--unknown-speaker <LABEL>`: Custom label for cues without speaker attribution (default: "Unknown")
+- `--include-timestamps <MODE>`: Timestamp inclusion mode (values: none, first, each; default: none)
 
-    /// Overwrite output file if it exists
-    #[arg(short, long)]
-    pub force: bool,
+**Built-in:**
+- `--help` / `-h`: Display help text (automatically provided by clap)
+- `--version` / `-V`: Display version (automatically provided by clap)
 
-    /// Skip conversion if output file exists
-    #[arg(short = 'n', long)]
-    pub no_clobber: bool,
+#### Validation Logic
+Implement validation that:
+- Checks for conflicting flags (--force and --no-clobber cannot both be used)
+- Detects if output path equals input path (prevent overwriting source)
+- Handles paths with spaces and special characters correctly
+- Provides method to derive output path from input path when not specified
 
-    /// Print output to stdout instead of writing to file
-    #[arg(long)]
-    pub stdout: bool,
+#### Integration with Main
+Update `src/main.rs` to:
+- Parse arguments and catch clap errors (map to exit code 64)
+- Run validation before processing
+- Display errors to stderr with appropriate exit codes
 
-    /// Label to use for cues without speaker attribution
-    #[arg(long, default_value = "Unknown")]
-    pub unknown_speaker: String,
+### Success Criteria
 
-    /// Include timestamps in output
-    #[arg(long, value_enum, default_value = "none")]
-    pub include_timestamps: TimestampMode,
-}
-
-#[derive(Debug, Clone, ValueEnum)]
-pub enum TimestampMode {
-    /// No timestamps in output
-    None,
-    /// First timestamp of each speaker turn
-    First,
-    /// Timestamp for each utterance
-    Each,
-}
-
-impl Args {
-    pub fn parse_args() -> Self {
-        Args::parse()
-    }
-
-    /// Get the output path, deriving from input if not specified
-    pub fn get_output_path(&self) -> Option<PathBuf> {
-        if self.stdout {
-            return None;
-        }
-
-        if let Some(ref output) = self.output {
-            Some(output.clone())
-        } else {
-            // Derive from input: replace extension with .md
-            let mut output = self.input.clone();
-            output.set_extension("md");
-            Some(output)
-        }
-    }
-
-    /// Validate that input and output are not the same file
-    pub fn validate(&self) -> Result<(), crate::error::VttError> {
-        use crate::error::VttError;
-
-        // Check for conflicting flags
-        if self.force && self.no_clobber {
-            return Err(VttError::ParseError {
-                reason: "Cannot use --force and --no-clobber together".to_string(),
-            });
-        }
-
-        // Check that output is not same as input
-        if let Some(output) = self.get_output_path() {
-            if self.input.canonicalize().ok() == output.canonicalize().ok()
-                && self.input.exists()
-            {
-                return Err(VttError::InputOutputSame {
-                    path: self.input.display().to_string(),
-                });
-            }
-        }
-
-        Ok(())
-    }
-}
-```
-
-#### 2. Integrate CLI parsing into main
-**File**: `src/main.rs`
-**Changes**: Parse arguments and validate before processing
-
-```rust
-mod error;
-mod cli;
-mod parser;
-mod consolidator;
-mod markdown;
-
-use std::process::ExitCode;
-use error::VttError;
-use cli::Args;
-
-fn main() -> ExitCode {
-    let args = match std::panic::catch_unwind(|| Args::parse_args()) {
-        Ok(args) => args,
-        Err(_) => {
-            // Clap handles its own error messages and exits
-            return ExitCode::from(64); // EX_USAGE
-        }
-    };
-
-    if let Err(e) = args.validate() {
-        eprintln!("Error: {}", e);
-        return e.exit_code();
-    }
-
-    println!("Input: {:?}", args.input);
-    println!("Output: {:?}", args.get_output_path());
-    println!("Phase 2 complete");
-    
-    ExitCode::SUCCESS
-}
-```
-
-### Success Criteria:
-
-#### Automated Verification:
+#### Automated Verification
 - [ ] Project compiles: `cargo build`
-- [ ] CLI help displays correctly: `cargo run -- --help`
+- [ ] Help text displays correctly: `cargo run -- --help`
 - [ ] Version flag works: `cargo run -- --version`
-- [ ] Invalid args show usage: `cargo run -- --invalid` (exit code 64)
-- [ ] Conflicting flags detected: `cargo run -- input.vtt --force --no-clobber` (exit code 65)
+- [ ] Invalid arguments trigger usage error: `cargo run -- --invalid` (exit 64)
+- [ ] Conflicting flags detected: `cargo run -- input.vtt --force --no-clobber` (error exit)
+- [ ] Missing required argument shows error: `cargo run --` (exit 64)
 
-#### Manual Verification:
-- [ ] Running with file path shows correct input/output derivation
-- [ ] Path with spaces handled: `cargo run -- "my file.vtt"`
-- [ ] Custom output path accepted: `cargo run -- input.vtt output.md`
-- [ ] Flags parse correctly: `cargo run -- input.vtt --force --stdout --unknown-speaker "Narrator"`
-- [ ] Help text is clear and describes all options
+#### Manual Verification
+- [ ] Run with file path and verify output path derivation is correct
+- [ ] Test path with spaces: `cargo run -- "my file.vtt"`
+- [ ] Test custom output: `cargo run -- input.vtt custom.md`
+- [ ] Test all flags parse correctly: `cargo run -- input.vtt --force --stdout`
+- [ ] Test unknown speaker option: `cargo run -- input.vtt --unknown-speaker "Narrator"`
+- [ ] Test timestamp modes: `cargo run -- input.vtt --include-timestamps first`
+- [ ] Verify help text is clear, well-formatted, and describes all options
+- [ ] Verify error messages for invalid input are actionable
+
+#### Critical Questions to Answer
+- Does the CLI feel intuitive to use?
+- Are error messages clear about what went wrong and how to fix it?
+- Do paths with spaces work on all target platforms (Windows, Linux, macOS)?
 
 ---
 
 ## Phase 3: VTT Parser Implementation
 
-### Overview
-Build a robust parser that reads VTT files, extracts cue text and speaker attributions from `<v>` tags, handles HTML character references, and gracefully manages malformed syntax variations from different platforms.
+### Objective
+Build a robust parser that reads VTT files, extracts speaker attributions and cue text, and handles real-world variations from different meeting platforms without failing.
 
-### Changes Required:
+### What Needs to Be Done
 
-#### 1. Define data structures for parsed VTT
-**File**: `src/parser.rs`
-**Changes**: Create types for VTT cues and speaker segments
+#### Data Structures
+Define types in `src/parser.rs`:
+- `Cue`: Represents a single VTT cue with optional timestamp, optional speaker, and text content
+- `VttDocument`: Contains a collection of parsed cues
 
-```rust
-use crate::error::VttError;
-use regex::Regex;
-use std::fs;
-use std::path::Path;
+#### File Reading and Validation
+Implement file reading that:
+- Opens and reads VTT file, handling file-not-found and permission errors appropriately
+- Validates that file starts with "WEBVTT" header
+- Returns descriptive errors with file paths for debugging
 
-#[derive(Debug, Clone)]
-pub struct Cue {
-    pub timestamp: Option<String>,
-    pub speaker: Option<String>,
-    pub text: String,
-}
+#### Cue Extraction Logic
+Parse VTT content by:
+- Identifying timestamp lines (format: `HH:MM:SS.mmm --> HH:MM:SS.mmm`)
+- Extracting cue text (lines following timestamp until empty line or next timestamp)
+- Skipping metadata blocks (NOTE, STYLE, REGION) without failing
+- Handling blank lines in cue payloads (non-standard but seen in Google Meet exports)
 
-#[derive(Debug)]
-pub struct VttDocument {
-    pub cues: Vec<Cue>,
-}
+#### Speaker Extraction
+Extract speaker names from voice tags:
+- Use regex to match `<v SpeakerName>text</v>` patterns
+- Handle missing voice tags (treat as unknown speaker)
+- Handle empty voice annotations (e.g., `<v>`) gracefully
 
-impl VttDocument {
-    pub fn parse_file(path: &Path) -> Result<Self, VttError> {
-        let content = fs::read_to_string(path).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                VttError::FileNotFound {
-                    path: path.display().to_string(),
-                }
-            } else if e.kind() == std::io::ErrorKind::PermissionDenied {
-                VttError::PermissionDenied {
-                    path: path.display().to_string(),
-                }
-            } else {
-                VttError::FileRead {
-                    path: path.display().to_string(),
-                    source: e,
-                }
-            }
-        })?;
+#### Text Cleaning
+Implement text sanitization:
+- Strip HTML tags other than voice tags already processed
+- Decode HTML character references (&amp; → &, &lt; → <, &gt; → >, &quot; → ", &#39; → ')
+- Normalize whitespace (collapse multiple spaces, trim)
+- Remove or coalesce blank lines within cue text
 
-        Self::parse_content(&content, path)
-    }
+#### Speaker Name Sanitization
+Sanitize speaker names by:
+- Removing @ symbols (used for anonymized users in Teams)
+- Applying Unicode NFC normalization to prevent combining character issues
+- Escaping Markdown special characters (* _ # [ ] ( ) { } ! > | ` \) with backslashes
+- Trimming whitespace
+- Treating whitespace-only names as unknown speakers
 
-    fn parse_content(content: &str, path: &Path) -> Result<Self, VttError> {
-        // Validate VTT header
-        if !content.starts_with("WEBVTT") {
-            return Err(VttError::ParseError {
-                reason: format!("File does not start with WEBVTT header: {}", path.display()),
-            });
-        }
+#### Platform-Specific Handling
+Ensure parser handles known variations:
+- **Microsoft Teams**: Standard `<v>` tags with potential @ symbols
+- **Zoom**: May use numeric speaker placeholders instead of names
+- **Google Meet**: Often missing `<v>` tags, may have blank lines in cue payloads
 
-        let cues = Self::extract_cues(content, path)?;
-        Ok(VttDocument { cues })
-    }
+### Success Criteria
 
-    fn extract_cues(content: &str, path: &Path) -> Result<Vec<Cue>, VttError> {
-        let mut cues = Vec::new();
-
-        // Regex for voice tags: <v SpeakerName>text</v>
-        let voice_regex = Regex::new(r"<v\s+([^>]+)>(.*?)</v>").unwrap();
-        
-        // Regex for timestamps: 00:00:00.000 --> 00:00:05.000
-        let timestamp_regex = Regex::new(
-            r"(\d{2}:\d{2}:\d{2}\.\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2}\.\d{3})"
-        ).unwrap();
-
-        let lines: Vec<&str> = content.lines().collect();
-        let mut i = 0;
-
-        while i < lines.len() {
-            let line = lines[i].trim();
-
-            // Skip empty lines, NOTE blocks, STYLE blocks, REGION blocks
-            if line.is_empty() 
-                || line.starts_with("NOTE") 
-                || line.starts_with("STYLE") 
-                || line.starts_with("REGION")
-                || line.starts_with("WEBVTT") {
-                i += 1;
-                continue;
-            }
-
-            // Look for timestamp line
-            if let Some(ts_match) = timestamp_regex.captures(line) {
-                let timestamp = ts_match.get(1).map(|m| m.as_str().to_string());
-                
-                // Collect cue text (lines until next empty line or timestamp)
-                i += 1;
-                let mut cue_text = String::new();
-                
-                while i < lines.len() {
-                    let text_line = lines[i].trim();
-                    
-                    // Stop at empty line or next timestamp
-                    if text_line.is_empty() || timestamp_regex.is_match(text_line) {
-                        break;
-                    }
-                    
-                    if !cue_text.is_empty() {
-                        cue_text.push(' ');
-                    }
-                    cue_text.push_str(text_line);
-                    i += 1;
-                }
-
-                // Extract speaker and text from voice tags
-                if let Some(cap) = voice_regex.captures(&cue_text) {
-                    let speaker = cap.get(1).map(|m| m.as_str().to_string());
-                    let text = cap.get(2).map(|m| m.as_str()).unwrap_or("");
-                    
-                    let sanitized_speaker = speaker.map(|s| Self::sanitize_speaker(&s));
-                    let cleaned_text = Self::clean_text(text);
-
-                    if !cleaned_text.is_empty() {
-                        cues.push(Cue {
-                            timestamp,
-                            speaker: sanitized_speaker,
-                            text: cleaned_text,
-                        });
-                    }
-                } else {
-                    // No voice tag - treat as unknown speaker
-                    let cleaned_text = Self::clean_text(&cue_text);
-                    if !cleaned_text.is_empty() {
-                        cues.push(Cue {
-                            timestamp,
-                            speaker: None,
-                            text: cleaned_text,
-                        });
-                    }
-                }
-            } else {
-                // Not a timestamp line, skip
-                i += 1;
-            }
-        }
-
-        if cues.is_empty() {
-            return Err(VttError::ParseError {
-                reason: format!("No valid cues found in file: {}", path.display()),
-            });
-        }
-
-        Ok(cues)
-    }
-
-    fn sanitize_speaker(speaker: &str) -> String {
-        use unicode_normalization::UnicodeNormalization;
-
-        let mut sanitized = speaker.trim().to_string();
-
-        // Remove @ symbols
-        sanitized = sanitized.replace('@', "");
-
-        // Apply Unicode NFC normalization
-        sanitized = sanitized.nfc().collect();
-
-        // Escape Markdown special characters
-        for ch in ['*', '_', '#', '[', ']', '(', ')', '{', '}', '!', '>', '|', '`', '\\'] {
-            sanitized = sanitized.replace(ch, &format!("\\{}", ch));
-        }
-
-        sanitized.trim().to_string()
-    }
-
-    fn clean_text(text: &str) -> String {
-        // Strip HTML tags (except voice tags which are already handled)
-        let tag_regex = Regex::new(r"<[^>]+>").unwrap();
-        let mut cleaned = tag_regex.replace_all(text, "").to_string();
-
-        // Decode HTML character references
-        cleaned = cleaned
-            .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&quot;", "\"")
-            .replace("&#39;", "'")
-            .replace("&apos;", "'");
-
-        // Trim and normalize whitespace
-        cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
-    }
-}
-```
-
-### Success Criteria:
-
-#### Automated Verification:
+#### Automated Verification
 - [ ] Code compiles: `cargo build`
-- [ ] Unit test for valid VTT file passes
-- [ ] Unit test for missing WEBVTT header fails correctly
-- [ ] Unit test for speaker sanitization works (removes @, escapes *)
-- [ ] Unit test for HTML entity decoding works (&amp; → &)
+- [ ] Unit test: Parse valid VTT file with multiple speakers succeeds
+- [ ] Unit test: File without WEBVTT header returns parse error
+- [ ] Unit test: Missing input file returns file-not-found error (exit 66)
+- [ ] Unit test: Speaker sanitization removes @ and escapes Markdown chars
+- [ ] Unit test: HTML entities are decoded correctly
+- [ ] Unit test: Cues without `<v>` tags are assigned None for speaker
+- [ ] Unit test: Empty or whitespace-only speaker names treated as None
 
-#### Manual Verification:
-- [ ] Parse a real Teams VTT file with `<v>` tags successfully
-- [ ] Parse a file with missing speaker tags (Unknown speaker assigned)
-- [ ] Parse a file with malformed tags without crashing
-- [ ] Verify speaker names with @ symbols are cleaned
-- [ ] Verify HTML entities in text are decoded correctly
+#### Manual Verification
+- [ ] Parse a real Microsoft Teams VTT file successfully
+- [ ] Verify speaker names extracted from `<v>` tags
+- [ ] Verify @ symbols removed from anonymized speakers
+- [ ] Parse a Zoom transcript (if available) without crashing
+- [ ] Parse a Google Meet transcript with blank lines without failing
+- [ ] Test file with malformed/unclosed tags—parser should not crash
+- [ ] Test file with only NOTE/STYLE blocks—should return no-cues error
+- [ ] Verify HTML entities in text (&amp;, &lt;) are decoded
+- [ ] Verify Unicode characters in speaker names are handled correctly
+
+#### Critical Questions to Answer
+- Does the parser handle all platform variations without requiring manual preprocessing?
+- Are error messages specific enough to help users understand what went wrong?
+- Does speaker sanitization preserve readability while preventing Markdown formatting issues?
 
 ---
 
 ## Phase 4: Speaker Consolidation
 
-### Overview
-Implement logic to consolidate consecutive cues from the same speaker into single segments, joining text with appropriate whitespace while respecting sentence boundaries.
+### Objective
+Implement logic to merge consecutive cues from the same speaker into coherent paragraphs while maintaining natural reading flow and respecting sentence boundaries.
 
-### Changes Required:
+### What Needs to Be Done
 
-#### 1. Create consolidator module
-**File**: `src/consolidator.rs`
-**Changes**: Define consolidation logic for speaker segments
+#### Data Structure
+Define `SpeakerSegment` type in `src/consolidator.rs` containing:
+- Speaker name (string)
+- Consolidated text (string)
+- Optional timestamp (for first cue of segment)
 
-```rust
-use crate::parser::{Cue, VttDocument};
-use crate::cli::TimestampMode;
+#### Consolidation Algorithm
+Implement consolidation that:
+- Iterates through parsed cues in order
+- Detects speaker changes (comparing current speaker with previous)
+- When speaker changes: saves previous segment, starts new segment
+- When speaker continues: appends current cue text to ongoing segment
+- Handles unknown speakers by applying configurable label (from CLI argument)
 
-#[derive(Debug)]
-pub struct SpeakerSegment {
-    pub speaker: String,
-    pub text: String,
-    pub timestamp: Option<String>,
-}
+#### Text Joining Strategy
+Join text intelligently:
+- Add single space between cues from same speaker
+- Respect sentence boundaries (don't incorrectly merge sentences)
+- Handle cases where cue ends with terminal punctuation (. ? !)
+- Trim final consolidated text to remove leading/trailing whitespace
 
-pub struct Consolidator {
-    unknown_speaker_label: String,
-    timestamp_mode: TimestampMode,
-}
+#### Timestamp Handling
+Support timestamp modes (based on CLI flag):
+- **None**: Don't include timestamps in segments
+- **First**: Include timestamp from first cue of each speaker turn
+- **Each**: Include timestamp for each original cue (requires different data structure or annotation)
 
-impl Consolidator {
-    pub fn new(unknown_speaker_label: String, timestamp_mode: TimestampMode) -> Self {
-        Consolidator {
-            unknown_speaker_label,
-            timestamp_mode,
-        }
-    }
+#### Edge Cases
+Handle:
+- Empty VTT files (no cues)
+- Files with only one speaker
+- Alternating speakers (A, B, A, B pattern)
+- Cues with empty/whitespace-only text (skip them)
+- Very long speaker turns (ensure memory efficiency)
 
-    pub fn consolidate(&self, document: &VttDocument) -> Vec<SpeakerSegment> {
-        if document.cues.is_empty() {
-            return Vec::new();
-        }
+### Success Criteria
 
-        let mut segments = Vec::new();
-        let mut current_speaker: Option<String> = None;
-        let mut current_text = String::new();
-        let mut current_timestamp: Option<String> = None;
-
-        for cue in &document.cues {
-            let speaker = cue.speaker.clone()
-                .unwrap_or_else(|| self.unknown_speaker_label.clone());
-
-            // Check if speaker changed
-            if Some(&speaker) != current_speaker.as_ref() {
-                // Save previous segment if exists
-                if let Some(prev_speaker) = current_speaker.take() {
-                    if !current_text.trim().is_empty() {
-                        segments.push(SpeakerSegment {
-                            speaker: prev_speaker,
-                            text: current_text.trim().to_string(),
-                            timestamp: current_timestamp.clone(),
-                        });
-                    }
-                }
-
-                // Start new segment
-                current_speaker = Some(speaker);
-                current_text = cue.text.clone();
-                current_timestamp = cue.timestamp.clone();
-            } else {
-                // Same speaker - consolidate text
-                if !current_text.is_empty() {
-                    // Add space between cues
-                    // If previous text ends with terminal punctuation, just add space
-                    // Otherwise, join with space
-                    let ends_with_terminal = current_text.trim_end()
-                        .ends_with(|c: char| c == '.' || c == '?' || c == '!');
-                    
-                    if ends_with_terminal {
-                        current_text.push(' ');
-                    } else {
-                        current_text.push(' ');
-                    }
-                }
-                current_text.push_str(&cue.text);
-            }
-        }
-
-        // Don't forget the last segment
-        if let Some(speaker) = current_speaker {
-            if !current_text.trim().is_empty() {
-                segments.push(SpeakerSegment {
-                    speaker,
-                    text: current_text.trim().to_string(),
-                    timestamp: current_timestamp,
-                });
-            }
-        }
-
-        segments
-    }
-}
-```
-
-### Success Criteria:
-
-#### Automated Verification:
+#### Automated Verification
 - [ ] Code compiles: `cargo build`
-- [ ] Unit test: consecutive same-speaker cues consolidate into one segment
-- [ ] Unit test: different speakers create separate segments
-- [ ] Unit test: empty/whitespace-only cues are skipped
-- [ ] Unit test: unknown speaker label is applied correctly
+- [ ] Unit test: Consecutive same-speaker cues consolidate into single segment
+- [ ] Unit test: Different speakers create separate segments in order
+- [ ] Unit test: Unknown speakers get custom label applied
+- [ ] Unit test: Empty/whitespace cues are skipped
+- [ ] Unit test: Text joining preserves spacing correctly
+- [ ] Unit test: Timestamp modes work (none, first, each)
 
-#### Manual Verification:
-- [ ] Test with VTT file containing 3 consecutive cues from same speaker
-- [ ] Verify output has single segment with all text joined
-- [ ] Test with alternating speakers (A, B, A, B pattern)
-- [ ] Verify output has 4 separate segments in correct order
-- [ ] Check text joining respects sentence boundaries (no missing spaces)
+#### Manual Verification
+- [ ] Create VTT with 3 consecutive cues from same speaker; verify single segment in output
+- [ ] Create VTT with alternating speakers (A, B, A, B); verify 4 segments in correct order
+- [ ] Test with file having no speaker tags; verify "Unknown" label applied
+- [ ] Test with custom unknown speaker label; verify label used correctly
+- [ ] Inspect joined text for natural reading flow (no missing spaces, no double spaces)
+- [ ] Verify sentence boundaries are respected (no run-on sentences)
+
+#### Critical Questions to Answer
+- Does the consolidation produce readable, natural-sounding paragraphs?
+- Are speaker changes clearly delineated?
+- Does the whitespace handling work correctly across different input formats?
 
 ---
 
 ## Phase 5: Markdown Generation and File Output
 
-### Overview
-Generate Markdown output with bold speaker names, handle file writing with existence checks, implement --force/--no-clobber/--stdout flags, and ensure proper error handling for all file operations.
+### Objective
+Generate properly formatted Markdown output and handle file writing with appropriate safeguards, supporting multiple output modes (file, stdout) and overwrite behaviors.
 
-### Changes Required:
+### What Needs to Be Done
 
-#### 1. Create markdown generator module
-**File**: `src/markdown.rs`
-**Changes**: Format segments as Markdown and handle file output
+#### Markdown Formatting
+Implement in `src/markdown.rs`:
+- Format each speaker segment as: `**SpeakerName:** text\n\n`
+- Speaker names are bold using `**...**` syntax
+- Double newline between segments for paragraph separation
+- If timestamps enabled, prepend: `[HH:MM:SS.mmm] **SpeakerName:** text\n\n`
 
-```rust
-use crate::consolidator::SpeakerSegment;
-use crate::error::VttError;
-use crate::cli::TimestampMode;
-use std::fs;
-use std::io::Write;
-use std::path::Path;
+#### File Writing Logic
+Implement output handling:
+- Check if output file already exists
+- If exists and --force not set: return error (exit 73, EX_CANTCREAT)
+- If exists and --force set: overwrite file
+- Handle write permission errors (exit 77, EX_NOPERM)
+- Handle other I/O errors (exit 74, EX_IOERR)
 
-pub struct MarkdownGenerator {
-    timestamp_mode: TimestampMode,
-}
+#### Stdout Mode
+When --stdout flag is set:
+- Skip file writing logic entirely
+- Print formatted Markdown to stdout
+- Handle stdout write errors gracefully
 
-impl MarkdownGenerator {
-    pub fn new(timestamp_mode: TimestampMode) -> Self {
-        MarkdownGenerator { timestamp_mode }
-    }
+#### No-Clobber Mode
+When --no-clobber flag is set and output exists:
+- Skip conversion silently (or with informational message)
+- Exit successfully (code 0)
+- Do not treat as error
 
-    pub fn generate(&self, segments: &[SpeakerSegment]) -> String {
-        let mut markdown = String::new();
+#### Integration with Main
+Wire up all components in `src/main.rs`:
+- Parse CLI arguments
+- Read and parse VTT file
+- Consolidate speaker segments
+- Generate Markdown
+- Write output according to selected mode (file/stdout)
+- Handle errors at each stage with appropriate exit codes
 
-        for segment in segments {
-            // Add timestamp if requested
-            let prefix = match self.timestamp_mode {
-                TimestampMode::None => String::new(),
-                TimestampMode::First | TimestampMode::Each => {
-                    if let Some(ref ts) = segment.timestamp {
-                        format!("[{}] ", ts)
-                    } else {
-                        String::new()
-                    }
-                }
-            };
+### Success Criteria
 
-            // Format as: **Speaker:** text
-            markdown.push_str(&format!(
-                "{}**{}:** {}\n\n",
-                prefix,
-                segment.speaker,
-                segment.text
-            ));
-        }
-
-        markdown
-    }
-
-    pub fn write_to_file(&self, content: &str, path: &Path, force: bool) -> Result<(), VttError> {
-        // Check if file exists
-        if path.exists() && !force {
-            return Err(VttError::OutputExists {
-                path: path.display().to_string(),
-            });
-        }
-
-        fs::write(path, content).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::PermissionDenied {
-                VttError::PermissionDenied {
-                    path: path.display().to_string(),
-                }
-            } else {
-                VttError::FileWrite {
-                    path: path.display().to_string(),
-                    source: e,
-                }
-            }
-        })
-    }
-
-    pub fn write_to_stdout(&self, content: &str) -> Result<(), VttError> {
-        std::io::stdout()
-            .write_all(content.as_bytes())
-            .map_err(|e| VttError::FileWrite {
-                path: "stdout".to_string(),
-                source: e,
-            })
-    }
-}
-```
-
-#### 2. Integrate all phases in main
-**File**: `src/main.rs`
-**Changes**: Wire up all modules and handle complete conversion flow
-
-```rust
-mod error;
-mod cli;
-mod parser;
-mod consolidator;
-mod markdown;
-
-use std::process::ExitCode;
-use error::VttError;
-use cli::Args;
-use parser::VttDocument;
-use consolidator::Consolidator;
-use markdown::MarkdownGenerator;
-
-fn main() -> ExitCode {
-    let args = match std::panic::catch_unwind(|| Args::parse_args()) {
-        Ok(args) => args,
-        Err(_) => {
-            return ExitCode::from(64); // EX_USAGE
-        }
-    };
-
-    if let Err(e) = run(args) {
-        eprintln!("Error: {}", e);
-        return e.exit_code();
-    }
-
-    ExitCode::SUCCESS
-}
-
-fn run(args: Args) -> Result<(), VttError> {
-    // Validate arguments
-    args.validate()?;
-
-    // Parse VTT file
-    let document = VttDocument::parse_file(&args.input)?;
-
-    // Consolidate speaker segments
-    let consolidator = Consolidator::new(
-        args.unknown_speaker.clone(),
-        args.include_timestamps.clone(),
-    );
-    let segments = consolidator.consolidate(&document);
-
-    // Generate Markdown
-    let generator = MarkdownGenerator::new(args.include_timestamps.clone());
-    let markdown = generator.generate(&segments);
-
-    // Output handling
-    if args.stdout {
-        // Print to stdout
-        generator.write_to_stdout(&markdown)?;
-    } else {
-        let output_path = args.get_output_path()
-            .expect("Output path should exist when not using stdout");
-
-        // Check --no-clobber flag
-        if args.no_clobber && output_path.exists() {
-            eprintln!("Output file exists, skipping: {}", output_path.display());
-            return Ok(());
-        }
-
-        // Write to file
-        generator.write_to_file(&markdown, &output_path, args.force)?;
-        
-        println!("Converted {} -> {}", 
-            args.input.display(), 
-            output_path.display());
-    }
-
-    Ok(())
-}
-```
-
-### Success Criteria:
-
-#### Automated Verification:
+#### Automated Verification
 - [ ] Full build succeeds: `cargo build --release`
-- [ ] Basic conversion works: Create test.vtt, run `cargo run -- test.vtt`, verify test.md exists
-- [ ] Force flag works: Run twice with --force, verify no error
-- [ ] No-clobber works: Run twice with --no-clobber, verify skip message
-- [ ] Stdout works: `cargo run -- test.vtt --stdout` prints Markdown
+- [ ] Basic conversion: Create test.vtt, run tool, verify test.md created
+- [ ] Force flag: Run twice with --force, second run succeeds
+- [ ] No-clobber flag: Run twice with --no-clobber, second run skips with message
+- [ ] Stdout flag: `cargo run -- test.vtt --stdout` prints Markdown to console
 - [ ] Clippy passes: `cargo clippy -- -D warnings`
-- [ ] Format check passes: `cargo fmt --check`
+- [ ] Formatting passes: `cargo fmt --check`
 
-#### Manual Verification:
-- [ ] Convert a real Teams VTT file and inspect Markdown quality
-- [ ] Verify speaker names are bold and properly formatted
+#### Manual Verification
+- [ ] Convert real Teams VTT file; inspect Markdown for quality
+- [ ] Verify speaker names are bold and properly formatted (`**Name:**`)
+- [ ] Verify paragraphs are separated by double newlines
 - [ ] Verify consecutive same-speaker text is consolidated
-- [ ] Test with Zoom VTT file (different format variations)
-- [ ] Test with Google Meet VTT file (blank lines, missing tags)
-- [ ] Test error cases: nonexistent file (exit 66), permission denied
-- [ ] Verify output file is in same directory as input
-- [ ] Test file path with spaces works correctly
+- [ ] Test with Zoom VTT file; verify compatibility
+- [ ] Test with Google Meet VTT file; verify compatibility
+- [ ] Test error case: nonexistent file (verify exit 66 and clear message)
+- [ ] Test error case: write-protected directory (verify exit 77)
+- [ ] Test output file placed in same directory as input
+- [ ] Test file path with spaces works on Windows
+- [ ] Verify Markdown special chars in speaker names are escaped
+- [ ] Test timestamp modes (none, first, each) and verify correct output format
+
+#### Critical Questions to Answer
+- Is the Markdown output properly formatted and readable in standard Markdown viewers?
+- Are all error cases handled with clear, actionable messages?
+- Does the tool behave safely by default (no accidental overwrites)?
 
 ---
 
 ## Phase 6: Testing Strategy
 
-### Overview
-Add comprehensive unit tests for each module, integration tests for end-to-end conversion scenarios, and document manual test cases for platform-specific VTT variations.
+### Objective
+Establish comprehensive test coverage across unit, integration, and manual testing to ensure reliability and correctness across different platforms and edge cases.
 
-### Changes Required:
+### What Needs to Be Done
 
-#### 1. Create unit tests for parser
-**File**: `src/parser.rs`
-**Changes**: Add test module at end of file
+#### Unit Tests
+Add test modules to each source file testing isolated functionality:
 
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
+**Parser Tests (`src/parser.rs`):**
+- Valid VTT file parsing succeeds
+- Missing WEBVTT header returns error
+- Speaker extraction from `<v>` tags works
+- Speaker sanitization (@ removal, Markdown escaping) works
+- HTML entity decoding works
+- Cues without speakers handled correctly
+- Malformed tags don't crash parser
+- Empty files handled gracefully
 
-    #[test]
-    fn test_parse_valid_vtt() {
-        let content = r#"WEBVTT
+**Consolidator Tests (`src/consolidator.rs`):**
+- Same-speaker consecutive cues consolidate
+- Different speakers create separate segments
+- Unknown speaker label applied correctly
+- Empty/whitespace cues skipped
+- Text joining produces correct spacing
+- Timestamp modes work as expected
 
-00:00:00.000 --> 00:00:05.000
-<v Alice>Hello, world!</v>
+**Markdown Tests (`src/markdown.rs`):**
+- Segment formatting produces correct Markdown syntax
+- Speaker names are bold
+- Timestamps included when requested
+- Double newlines between paragraphs
 
-00:00:05.000 --> 00:00:10.000
-<v Bob>Hi there!</v>
-"#;
-        let mut file = NamedTempFile::new().unwrap();
-        file.write_all(content.as_bytes()).unwrap();
-        
-        let doc = VttDocument::parse_file(file.path()).unwrap();
-        assert_eq!(doc.cues.len(), 2);
-        assert_eq!(doc.cues[0].speaker.as_deref(), Some("Alice"));
-        assert_eq!(doc.cues[0].text, "Hello, world!");
-    }
+**Error Tests (`src/error.rs`):**
+- Exit codes map correctly
+- Error messages include relevant context
 
-    #[test]
-    fn test_sanitize_speaker_removes_at_symbol() {
-        let result = VttDocument::sanitize_speaker("@user1234");
-        assert_eq!(result, "user1234");
-    }
+#### Integration Tests
+Create `tests/integration_test.rs` with end-to-end scenarios:
+- Basic conversion (input.vtt → input.md) succeeds
+- Output file contains expected formatted content
+- --force flag allows overwrite
+- --no-clobber flag skips when output exists
+- --stdout flag prints to console instead of file
+- --unknown-speaker flag applies custom label
+- --include-timestamps flags affect output format
+- File-not-found error returns exit code 66
+- Invalid VTT format returns exit code 65
+- Permission errors return exit code 77
 
-    #[test]
-    fn test_sanitize_speaker_escapes_markdown() {
-        let result = VttDocument::sanitize_speaker("Name*With_Special#Chars");
-        assert!(result.contains("\\*"));
-        assert!(result.contains("\\_"));
-        assert!(result.contains("\\#"));
-    }
+#### Manual Test Documentation
+Create `tests/MANUAL_TESTS.md` checklist documenting:
+- Platform-specific tests (Teams, Zoom, Meet VTT files)
+- File association testing (Windows, Linux, macOS)
+- Large file performance testing (multi-hour transcripts)
+- Special character handling (spaces in paths, Unicode in names, emoji)
+- Error condition testing (missing files, permissions, invalid format)
+- Cross-platform compatibility verification
 
-    #[test]
-    fn test_clean_text_decodes_html_entities() {
-        let result = VttDocument::clean_text("Hello &amp; goodbye");
-        assert_eq!(result, "Hello & goodbye");
-    }
+#### Test Dependencies
+Add to `Cargo.toml` dev-dependencies:
+- **tempfile** (v3.8+): For creating temporary test files and directories
 
-    #[test]
-    fn test_parse_missing_header() {
-        let content = "Not a VTT file";
-        let mut file = NamedTempFile::new().unwrap();
-        file.write_all(content.as_bytes()).unwrap();
-        
-        let result = VttDocument::parse_file(file.path());
-        assert!(result.is_err());
-    }
-}
-```
+### Success Criteria
 
-#### 2. Create unit tests for consolidator
-**File**: `src/consolidator.rs`
-**Changes**: Add test module
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::cli::TimestampMode;
-
-    #[test]
-    fn test_consolidate_same_speaker() {
-        let cues = vec![
-            Cue {
-                timestamp: Some("00:00:00.000".to_string()),
-                speaker: Some("Alice".to_string()),
-                text: "Hello".to_string(),
-            },
-            Cue {
-                timestamp: Some("00:00:05.000".to_string()),
-                speaker: Some("Alice".to_string()),
-                text: "world!".to_string(),
-            },
-        ];
-        
-        let doc = VttDocument { cues };
-        let consolidator = Consolidator::new("Unknown".to_string(), TimestampMode::None);
-        let segments = consolidator.consolidate(&doc);
-        
-        assert_eq!(segments.len(), 1);
-        assert_eq!(segments[0].speaker, "Alice");
-        assert_eq!(segments[0].text, "Hello world!");
-    }
-
-    #[test]
-    fn test_consolidate_different_speakers() {
-        let cues = vec![
-            Cue {
-                timestamp: Some("00:00:00.000".to_string()),
-                speaker: Some("Alice".to_string()),
-                text: "Hello".to_string(),
-            },
-            Cue {
-                timestamp: Some("00:00:05.000".to_string()),
-                speaker: Some("Bob".to_string()),
-                text: "Hi there".to_string(),
-            },
-        ];
-        
-        let doc = VttDocument { cues };
-        let consolidator = Consolidator::new("Unknown".to_string(), TimestampMode::None);
-        let segments = consolidator.consolidate(&doc);
-        
-        assert_eq!(segments.len(), 2);
-        assert_eq!(segments[0].speaker, "Alice");
-        assert_eq!(segments[1].speaker, "Bob");
-    }
-
-    #[test]
-    fn test_unknown_speaker_label() {
-        let cues = vec![
-            Cue {
-                timestamp: Some("00:00:00.000".to_string()),
-                speaker: None,
-                text: "Mystery text".to_string(),
-            },
-        ];
-        
-        let doc = VttDocument { cues };
-        let consolidator = Consolidator::new("Narrator".to_string(), TimestampMode::None);
-        let segments = consolidator.consolidate(&doc);
-        
-        assert_eq!(segments.len(), 1);
-        assert_eq!(segments[0].speaker, "Narrator");
-    }
-}
-```
-
-#### 3. Create integration tests
-**File**: `tests/integration_test.rs`
-**Changes**: Create end-to-end test cases
-
-```rust
-use std::fs;
-use std::process::Command;
-use tempfile::TempDir;
-
-#[test]
-fn test_basic_conversion() {
-    let temp_dir = TempDir::new().unwrap();
-    let input_path = temp_dir.path().join("test.vtt");
-    let output_path = temp_dir.path().join("test.md");
-
-    let vtt_content = r#"WEBVTT
-
-00:00:00.000 --> 00:00:05.000
-<v Alice>Hello, everyone!</v>
-
-00:00:05.000 --> 00:00:10.000
-<v Bob>Hi Alice!</v>
-"#;
-
-    fs::write(&input_path, vtt_content).unwrap();
-
-    let status = Command::new("cargo")
-        .args(["run", "--", input_path.to_str().unwrap()])
-        .status()
-        .unwrap();
-
-    assert!(status.success());
-    assert!(output_path.exists());
-
-    let output_content = fs::read_to_string(&output_path).unwrap();
-    assert!(output_content.contains("**Alice:** Hello, everyone!"));
-    assert!(output_content.contains("**Bob:** Hi Alice!"));
-}
-
-#[test]
-fn test_force_overwrite() {
-    let temp_dir = TempDir::new().unwrap();
-    let input_path = temp_dir.path().join("test.vtt");
-    let output_path = temp_dir.path().join("test.md");
-
-    let vtt_content = r#"WEBVTT
-
-00:00:00.000 --> 00:00:05.000
-<v Alice>Test</v>
-"#;
-
-    fs::write(&input_path, vtt_content).unwrap();
-    fs::write(&output_path, "Old content").unwrap();
-
-    let status = Command::new("cargo")
-        .args(["run", "--", input_path.to_str().unwrap(), "--force"])
-        .status()
-        .unwrap();
-
-    assert!(status.success());
-    let output_content = fs::read_to_string(&output_path).unwrap();
-    assert!(output_content.contains("**Alice:** Test"));
-}
-
-#[test]
-fn test_file_not_found() {
-    let status = Command::new("cargo")
-        .args(["run", "--", "nonexistent.vtt"])
-        .status()
-        .unwrap();
-
-    assert_eq!(status.code(), Some(66));
-}
-```
-
-#### 4. Add test dependency to Cargo.toml
-**File**: `Cargo.toml`
-**Changes**: Add dev-dependencies section
-
-```toml
-[dev-dependencies]
-tempfile = "3.8"
-```
-
-#### 5. Document manual test cases
-**File**: `tests/MANUAL_TESTS.md`
-**Changes**: Create manual testing checklist
-
-```markdown
-# Manual Test Cases for VTT to MD
-
-## Platform-Specific VTT Files
-
-### Microsoft Teams
-1. Download a Teams meeting transcript (.vtt)
-2. Run: `vtt-to-md teams-meeting.vtt`
-3. Verify:
-   - [ ] Speaker names extracted correctly from `<v>` tags
-   - [ ] Consecutive same-speaker segments consolidated
-   - [ ] @ symbols removed from anonymized speakers
-   - [ ] Output is readable and properly formatted
-
-### Zoom
-1. Download a Zoom cloud recording transcript
-2. Run: `vtt-to-md zoom-recording.vtt`
-3. Verify:
-   - [ ] Numeric speaker placeholders handled (if present)
-   - [ ] Speaker names with special characters work
-   - [ ] Timestamps parsed correctly
-
-### Google Meet
-1. Export a Meet transcript
-2. Run: `vtt-to-md meet-transcript.vtt`
-3. Verify:
-   - [ ] Files with blank lines in cue payloads work
-   - [ ] Missing `<v>` tags default to Unknown speaker
-   - [ ] Non-standard formatting doesn't crash parser
-
-## File Association Testing
-
-### Windows
-1. Compile release: `cargo build --release`
-2. Right-click .vtt file → Open With → Choose vtt-to-md.exe
-3. Verify: .md file created in same directory
-
-### Linux
-1. Create .desktop entry pointing to executable
-2. Double-click .vtt file in file manager
-3. Verify: .md file created
-
-### macOS
-1. Note: CLI tools typically invoked via Terminal or scripts
-2. Test: `open -a Terminal file.vtt` (if configured)
-
-## Edge Cases
-
-### Large Files
-1. Create/download multi-hour meeting transcript (several MB)
-2. Run: `vtt-to-md large-meeting.vtt`
-3. Verify:
-   - [ ] Completes in reasonable time (< 5 seconds)
-   - [ ] No memory issues
-   - [ ] Output file is correct
-
-### Special Characters
-1. Test file with paths containing spaces: `"my file.vtt"`
-2. Test speaker names with emoji, Unicode
-3. Test text with HTML entities (&amp;, &lt;, etc.)
-
-### Error Conditions
-1. Nonexistent file: verify exit code 66
-2. Read-protected file: verify exit code 77
-3. Write-protected directory: verify exit code 77
-4. Invalid VTT format: verify exit code 65
-```
-
-### Success Criteria:
-
-#### Automated Verification:
+#### Automated Verification
 - [ ] All unit tests pass: `cargo test`
 - [ ] All integration tests pass: `cargo test --test integration_test`
-- [ ] Code coverage > 80% (if coverage tool configured)
-- [ ] No test failures on Windows, Linux, macOS (CI)
+- [ ] Test coverage > 80% for core logic (parser, consolidator, markdown)
+- [ ] Tests run successfully on CI for Windows, Linux, macOS (if CI configured)
+- [ ] No test flakiness or race conditions
 
-#### Manual Verification:
+#### Manual Verification
 - [ ] Complete all test cases in MANUAL_TESTS.md
-- [ ] Test with real VTT files from Teams, Zoom, Meet
+- [ ] Test with real VTT files from Teams, Zoom, and Meet
 - [ ] Verify file association works on at least one platform
-- [ ] Test edge cases: large files, special characters, errors
-- [ ] Verify error messages are clear and actionable
+- [ ] Test large files (multi-hour transcripts) for performance
+- [ ] Test paths with spaces on Windows
+- [ ] Test Unicode speaker names and emoji
+- [ ] Test all error conditions produce appropriate exit codes and messages
+- [ ] Cross-platform testing confirms compatibility
+
+#### Critical Questions to Answer
+- Are there any gaps in test coverage for critical functionality?
+- Do tests accurately reflect real-world usage scenarios?
+- Are error messages tested to ensure they're helpful?
+- Is the manual testing process repeatable and documented?
 
 ---
 
-## Testing Strategy
+## Testing Strategy Summary
 
-### Unit Tests
-Focus on individual components in isolation:
-- **Parser**: VTT format parsing, speaker extraction, text cleaning, HTML decoding
-- **Consolidator**: Same-speaker merging, different-speaker separation, unknown speaker handling
-- **Markdown**: Format generation, timestamp inclusion modes
-- **Error handling**: Exit code mapping, error message generation
+### Unit Testing Focus
+- Individual functions and methods in isolation
+- Edge cases and error conditions
+- Data transformation correctness
+- Speaker name sanitization
+- HTML entity decoding
+- Whitespace normalization
 
-### Integration Tests
-Test complete conversion workflows:
-- Basic VTT to MD conversion
-- Output file placement (same directory, correct name)
-- Flag behavior: --force, --no-clobber, --stdout
-- Error scenarios: missing file, permission errors
-- Custom unknown speaker label
-- Timestamp inclusion modes
+### Integration Testing Focus
+- End-to-end conversion workflows
+- CLI argument handling and validation
+- Flag behavior (--force, --no-clobber, --stdout)
+- Error propagation and exit codes
+- File I/O operations
 
-### Manual Testing
-Real-world validation:
-- Platform-specific VTT files (Teams, Zoom, Meet)
-- File association workflows (double-click)
-- Large files (performance)
-- Special characters in paths and content
-- Cross-platform compatibility
+### Manual Testing Focus
+- Real-world VTT file compatibility (Teams, Zoom, Meet)
+- Platform-specific behaviors (Windows, Linux, macOS)
+- File association workflows
+- Performance with large files
+- Unicode and special character handling
+- User experience and error message quality
 
-### Test Data
-Create minimal test VTT files for:
-- Simple two-speaker conversation
-- Same speaker consecutive cues
+### Test Data Requirements
+Prepare minimal test VTT files for:
+- Two-speaker conversation
+- Single speaker multiple cues
 - Missing voice tags
-- Malformed tags
-- HTML entities
+- Malformed/unclosed tags
+- HTML entities in text
 - Empty file
 - No WEBVTT header
+- Platform-specific variations (Teams @users, Google Meet blank lines)
 
 ---
 
 ## Performance Considerations
 
-The tool processes files incrementally using buffered reading (`BufRead`) to handle large transcripts efficiently. Typical meeting transcripts are:
-- 1 hour meeting: ~80-400 KB
-- Multi-hour meeting: few MB at most
+### Expected File Sizes
+Typical meeting transcripts:
+- 1-hour meeting: ~80-400 KB
+- Multi-hour meeting: few MB maximum
 
-Expected performance: < 1 second for typical files, < 5 seconds for multi-hour transcripts on modern hardware.
+### Performance Requirements
+- Parse and convert typical file (< 1 MB) in under 1 second
+- Handle multi-hour transcripts (few MB) in under 5 seconds
+- Memory usage should be reasonable (< 100 MB for typical files)
 
-No optimization needed initially; profile if performance issues arise with real-world usage.
+### Implementation Strategy
+- Use buffered file reading (`BufRead`) for efficient I/O
+- Avoid loading entire file into memory if not necessary
+- Regex compilation should be done once, not per-cue
+- String allocations should be minimized where possible
+
+### Optimization Approach
+- Profile before optimizing
+- Focus on correctness first, performance second
+- Only optimize if real-world usage shows performance issues
 
 ---
 
-## Migration Notes
+## Migration and Deployment
 
+### Migration Notes
 N/A - This is a new tool with no existing users or data to migrate.
+
+### Deployment Considerations
+- Compile release binary: `cargo build --release`
+- Binary location: `target/release/vtt-to-md.exe` (Windows) or `target/release/vtt-to-md` (Unix)
+- No runtime dependencies beyond OS standard libraries
+- Cross-platform binaries should be built on respective platforms or via cross-compilation
+
+### File Association Setup (User Documentation)
+**Windows:**
+- Right-click .vtt file → Properties → Change → Browse to vtt-to-md.exe
+- Or: Use `ftype` and `assoc` commands to register file type
+
+**Linux:**
+- Create `.desktop` file with `Exec=vtt-to-md %F`
+- Place in `~/.local/share/applications/`
+- Update MIME database if needed
+
+**macOS:**
+- File associations typically handled at application level, not for CLI tools
+- Users can create Automator workflows or scripts if desired
+
+---
+
+## Open Questions and Risks
+
+### Technical Risks
+
+**Risk:** VTT files from different platforms may have unexpected format variations not covered by research
+- **Mitigation:** Be permissive in parsing, log/skip unknown structures, test with real files from all platforms
+
+**Risk:** Regex patterns may not match all VTT voice tag variations
+- **Mitigation:** Make regex flexible, handle missing matches gracefully, provide clear errors when parsing fails
+
+**Risk:** Large files could cause memory issues if entire file loaded at once
+- **Mitigation:** Use streaming/buffered reading, process line-by-line or in chunks
+
+### User Experience Risks
+
+**Risk:** Error messages may not be clear enough for non-technical users
+- **Mitigation:** Test error messages with non-developers, include file paths and actionable suggestions
+
+**Risk:** File association may not work as expected across all platforms
+- **Mitigation:** Provide clear documentation, test on each platform, consider alternative invocation methods
+
+### Scope Risks
+
+**Risk:** Feature creep (requests for JSON export, analytics, GUI, etc.)
+- **Mitigation:** Clearly document out-of-scope features, focus on core conversion functionality first
+
+---
+
+## Success Metrics
+
+### Functional Success
+- Tool correctly converts VTT files from Teams, Zoom, and Meet without manual preprocessing
+- Generated Markdown is readable and properly formatted
+- All exit codes are appropriate for error conditions
+- All CLI flags work as documented
+
+### Quality Success
+- Code passes clippy with no warnings
+- Code is formatted per `cargo fmt`
+- Test coverage > 80% for core logic
+- No panics on expected inputs (including malformed VTT files)
+
+### User Success
+- Users can convert transcripts with a single command
+- Error messages are clear and actionable
+- Help text is sufficient for users to understand options
+- Tool works across Windows, Linux, and macOS
 
 ---
 
 ## References
 
+### Project Documentation
 - Original Issue: https://github.com/lossyrob/vtt-to-md/issues/1
-- Spec: `.paw/work/vtt-to-md-cli/Spec.md`
-- Research: `.paw/work/vtt-to-md-cli/SpecResearch.md`
-- WebVTT Specification: https://www.w3.org/TR/webvtt1/
-- BSD sysexits: https://man7.org/linux/man-pages/man3/sysexits.h.3head.html
-- Command Line Interface Guidelines: https://clig.dev/
-- CommonMark Specification: https://github.com/commonmark/commonmark-spec
+- Feature Specification: `.paw/work/vtt-to-md-cli/Spec.md`
+- Research Findings: `.paw/work/vtt-to-md-cli/SpecResearch.md`
+
+### External Standards and Guidelines
+- **WebVTT Specification (W3C):** https://www.w3.org/TR/webvtt1/
+- **BSD sysexits.h:** https://man7.org/linux/man-pages/man3/sysexits.h.3head.html
+- **Command Line Interface Guidelines:** https://clig.dev/
+- **CommonMark Specification:** https://github.com/commonmark/commonmark-spec
+
+### Rust Ecosystem
+- **clap Documentation:** https://docs.rs/clap/
+- **thiserror Documentation:** https://docs.rs/thiserror/
+- **anyhow Documentation:** https://docs.rs/anyhow/
+- **Rust CLI Book:** https://rust-cli.github.io/book/
