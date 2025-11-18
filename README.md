@@ -15,11 +15,17 @@ A Rust command-line tool for converting VTT (WebVTT) transcript files from meeti
 
 ## Installation
 
+### Windows MSI Installer
+
+Download the MSI installer from [GitHub Releases](https://github.com/lossyrob/vtt-to-md/releases) and run it. Optionally enable .vtt file association during installation to convert files by double-clicking them.
+
+### Build from Source
+
 ```bash
 cargo install --path .
 ```
 
-Or build from source:
+Or build manually:
 
 ```bash
 cargo build --release
@@ -45,6 +51,7 @@ vtt-to-md input.vtt output.md --filter-unknown --include-timestamps first
 - `OUTPUT` - Path to the output Markdown file (optional, defaults to INPUT with .md extension)
 - `--force`, `-f` - Overwrite existing output file
 - `--no-clobber`, `-n` - Skip conversion if output file exists
+- `--no-auto-increment` - Disable auto-increment of output filename (use with --force to overwrite)
 - `--stdout` - Print Markdown to stdout instead of writing to file
 - `--unknown-speaker LABEL` - Custom label for cues without speaker attribution (default: "Unknown")
 - `--filter-unknown` - Explicitly filter out cues without speaker attribution (auto-enabled for Teams-style VTT)
@@ -52,6 +59,8 @@ vtt-to-md input.vtt output.md --filter-unknown --include-timestamps first
 - `--include-timestamps MODE` - Timestamp inclusion mode: `none` (default), `first`, or `each`
 - `--help`, `-h` - Display help text
 - `--version`, `-V` - Display version
+
+**Note:** By default, if the output file exists, a numbered suffix is added (e.g., `meeting.md`, `meeting (1).md`, `meeting (2).md`). Use `--no-auto-increment` to restore the old behavior.
 
 ### Examples
 

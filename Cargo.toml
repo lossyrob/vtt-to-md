@@ -2,6 +2,8 @@
 name = "vtt-to-md"
 version = "0.1.0"
 edition = "2024"
+authors = ["Rob Emanuele"]
+license = "MIT"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive", "color", "suggestions"] }
@@ -12,3 +14,9 @@ unicode-normalization = "0.1"
 
 [dev-dependencies]
 tempfile = "3.8"
+
+[package.metadata.wix]
+upgrade-guid = "974B7017-9871-4FED-81ED-2226B2CBAD99"
+path-guid = "81B1E74D-EE61-445C-9465-5F30555744D0"
+license = false
+eula = false

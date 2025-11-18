@@ -40,6 +40,8 @@ fn create_test_vtt(dir: &TempDir, filename: &str, content: &str) -> PathBuf {
     path
 }
 
+const SIMPLE_VTT: &str = "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v Alice>Hello world</v>\n";
+
 #[test]
 fn test_basic_conversion() {
     let temp_dir = TempDir::new().unwrap();
@@ -78,6 +80,7 @@ fn test_force_flag_overwrites() {
     let vtt_to_md = get_vtt_to_md_path();
     let output = Command::new(&vtt_to_md)
         .arg(input_path.to_str().unwrap())
+        .arg("--no-auto-increment")
         .arg("--force")
         .output()
         .expect("Failed to execute vtt-to-md");
@@ -273,6 +276,7 @@ fn test_output_exists_without_force() {
     let vtt_to_md = get_vtt_to_md_path();
     let output = Command::new(&vtt_to_md)
         .arg(input_path.to_str().unwrap())
+        .arg("--no-auto-increment")
         .output()
         .expect("Failed to execute vtt-to-md");
 
@@ -493,4 +497,111 @@ Yeah.\n\
     // Verify Alice and Bob are still present and consolidated (in filtered output)
     assert!(stdout.contains("**Alice:** Hello world How are you?"), "Alice's cues should be consolidated");
     assert!(stdout.contains("**Bob:** I'm fine, thanks!"), "Bob should be present");
+}
+
+#[test]
+fn test_auto_increment_filename() {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let input_vtt = temp_dir.path().join("meeting.vtt");
+    
+    // Create a simple VTT file
+    fs::write(&input_vtt, SIMPLE_VTT).expect("Failed to write VTT file");
+    
+    // First conversion: creates meeting.md
+    let output = Command::new(get_vtt_to_md_path())
+        .arg(&input_vtt)
+        .output()
+        .expect("Failed to execute vtt-to-md");
+    
+    assert!(output.status.success(), "First conversion failed");
+    
+    let first_output = temp_dir.path().join("meeting.md");
+    assert!(first_output.exists(), "meeting.md should exist");
+    
+    // Second conversion: should create meeting (1).md
+    let output = Command::new(get_vtt_to_md_path())
+        .arg(&input_vtt)
+        .output()
+        .expect("Failed to execute vtt-to-md");
+    
+    assert!(output.status.success(), "Second conversion failed");
+    
+    let second_output = temp_dir.path().join("meeting (1).md");
+    assert!(second_output.exists(), "meeting (1).md should exist");
+    
+    // Third conversion: should create meeting (2).md
+    let output = Command::new(get_vtt_to_md_path())
+        .arg(&input_vtt)
+        .output()
+        .expect("Failed to execute vtt-to-md");
+    
+    assert!(output.status.success(), "Third conversion failed");
+    
+    let third_output = temp_dir.path().join("meeting (2).md");
+    assert!(third_output.exists(), "meeting (2).md should exist");
+    
+    // Verify all three files exist and are different
+    assert!(first_output.exists() && second_output.exists() && third_output.exists());
+}
+
+#[test]
+fn test_no_auto_increment_flag() {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let input_vtt = temp_dir.path().join("meeting.vtt");
+    let output_md = temp_dir.path().join("meeting.md");
+    
+    // Create a simple VTT file
+    fs::write(&input_vtt, SIMPLE_VTT).expect("Failed to write VTT file");
+    
+    // First conversion: creates meeting.md
+    let output = Command::new(get_vtt_to_md_path())
+        .arg(&input_vtt)
+        .output()
+        .expect("Failed to execute vtt-to-md");
+    
+    assert!(output.status.success());
+    assert!(output_md.exists());
+    
+    // Second conversion with --no-auto-increment should fail
+    let output = Command::new(get_vtt_to_md_path())
+        .arg("--no-auto-increment")
+        .arg(&input_vtt)
+        .output()
+        .expect("Failed to execute vtt-to-md");
+    
+    assert!(!output.status.success(), "Should fail when output exists");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("already exists") || stderr.contains("OutputExists"));
+    
+    // Should succeed with --force
+    let output = Command::new(get_vtt_to_md_path())
+        .arg("--no-auto-increment")
+        .arg("--force")
+        .arg(&input_vtt)
+        .output()
+        .expect("Failed to execute vtt-to-md");
+    
+    assert!(output.status.success(), "Should succeed with --force flag");
+}
+
+#[test]
+fn test_explicit_output_skips_auto_increment() {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let input_vtt = temp_dir.path().join("meeting.vtt");
+    let explicit_output = temp_dir.path().join("custom.md");
+    
+    // Create a simple VTT file
+    fs::write(&input_vtt, SIMPLE_VTT).expect("Failed to write VTT file");
+    
+    // Create existing file at explicit output location
+    fs::write(&explicit_output, "existing content").expect("Failed to write existing file");
+    
+    // Conversion with explicit output should fail (auto-increment only applies to derived paths)
+    let output = Command::new(get_vtt_to_md_path())
+        .arg(&input_vtt)
+        .arg(&explicit_output)
+        .output()
+        .expect("Failed to execute vtt-to-md");
+    
+    assert!(!output.status.success(), "Should fail when explicit output exists");
 }
