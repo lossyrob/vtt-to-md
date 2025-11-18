@@ -46,7 +46,7 @@ jobs:
           Get-Content Cargo.toml | Select-String "version"
       
       - name: Build MSI
-        run: cargo wix --nocapture
+        run: cargo wix --nocapture -- -sice:ICE38 -sice:ICE57 -sice:ICE64 -sice:ICE91
       
       - name: Rename MSI with version
         shell: pwsh
