@@ -28,6 +28,8 @@ pub struct Cue {
 pub struct VttDocument {
     /// The collection of cues extracted from the VTT file
     pub cues: Vec<Cue>,
+    /// Whether this VTT file contains voice tags (Teams-style format)
+    pub has_voice_tags: bool,
 }
 
 impl VttDocument {
@@ -88,19 +90,20 @@ impl VttDocument {
         }
 
         // Parse cues from the remaining lines
-        let cues = parse_cues(lines)?;
+        let (cues, has_voice_tags) = parse_cues(lines)?;
 
-        Ok(VttDocument { cues })
+        Ok(VttDocument { cues, has_voice_tags })
     }
 }
 
 /// Parse cues from VTT file lines.
-fn parse_cues<I>(lines: I) -> Result<Vec<Cue>, VttError>
+/// Returns the list of cues and a boolean indicating if any voice tags were found.
+fn parse_cues<I>(lines: I) -> Result<(Vec<Cue>, bool), VttError>
 where
     I: Iterator<Item = io::Result<String>>,
 {
     let timestamp_regex =
-        Regex::new(r"^\s*(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}").unwrap();
+        Regex::new(r"^\s*(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})").unwrap();
     let mut cues = Vec::new();
     let mut current_timestamp: Option<String> = None;
     let mut current_text = Vec::new();
@@ -165,7 +168,21 @@ where
         save_cue(&mut cues, current_timestamp, &current_text)?;
     }
 
-    Ok(cues)
+    // Check if any cues have speakers (indicating voice tags were present)
+    let has_voice_tags = cues.iter().any(|cue| cue.speaker.is_some());
+
+    // Sort cues by timestamp to handle out-of-order cues in VTT files
+    // (some formats like Teams can have interleaved cues)
+    cues.sort_by(|a, b| {
+        match (&a.timestamp, &b.timestamp) {
+            (Some(ts_a), Some(ts_b)) => ts_a.cmp(ts_b),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        }
+    });
+
+    Ok((cues, has_voice_tags))
 }
 
 /// Save a cue by extracting speaker and cleaning text.
@@ -201,7 +218,8 @@ fn save_cue(
 /// Extract speaker name from <v> voice tags and return speaker and remaining text.
 fn extract_speaker_and_text(text: &str) -> (Option<String>, String) {
     // First try to match closed voice tags: <v Speaker>text</v>
-    let voice_closed_regex = Regex::new(r"<v\s+([^>]*)>(.*?)</v>").unwrap();
+    // Use (?s) flag to make . match newlines (for multi-line cue content)
+    let voice_closed_regex = Regex::new(r"(?s)<v\s+([^>]*)>(.*?)</v>").unwrap();
 
     if let Some(captures) = voice_closed_regex.captures(text) {
         let speaker_str = captures.get(1).map(|m| m.as_str().trim()).unwrap_or("");
@@ -216,14 +234,16 @@ fn extract_speaker_and_text(text: &str) -> (Option<String>, String) {
     }
 
     // Also try to match <v>text</v> (empty speaker)
-    let voice_empty_regex = Regex::new(r"<v>(.*?)</v>").unwrap();
+    // Use (?s) flag to make . match newlines
+    let voice_empty_regex = Regex::new(r"(?s)<v>(.*?)</v>").unwrap();
     if let Some(captures) = voice_empty_regex.captures(text) {
         let content = captures.get(1).map(|m| m.as_str()).unwrap_or("");
         return (None, content.to_string());
     }
 
     // Check for voice tag without closing tag: <v Speaker>text
-    let voice_open_regex = Regex::new(r"<v\s+([^>]*)>(.*)").unwrap();
+    // Use (?s) flag to make . match newlines
+    let voice_open_regex = Regex::new(r"(?s)<v\s+([^>]*)>(.*)").unwrap();
     if let Some(captures) = voice_open_regex.captures(text) {
         let speaker_str = captures.get(1).map(|m| m.as_str()).unwrap_or("").trim();
         let speaker = if speaker_str.is_empty() {
@@ -366,6 +386,16 @@ mod tests {
         let (speaker, text) = extract_speaker_and_text("<v Jane Smith>Hello world");
         assert_eq!(speaker, Some("Jane Smith".to_string()));
         assert_eq!(text, "Hello world");
+
+        // Test with multi-line voice tag (newlines in content)
+        let (speaker, text) = extract_speaker_and_text("<v Alice>Line one\nLine two</v>");
+        assert_eq!(speaker, Some("Alice".to_string()));
+        assert_eq!(text, "Line one\nLine two");
+
+        // Test with multi-line voice tag with empty speaker
+        let (speaker, text) = extract_speaker_and_text("<v>First line\nSecond line</v>");
+        assert_eq!(speaker, None);
+        assert_eq!(text, "First line\nSecond line");
     }
 
     #[test]

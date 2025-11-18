@@ -40,9 +40,26 @@ fn run_conversion(args: &Args) -> Result<(), error::VttError> {
     // Parse the VTT file
     let vtt_document = parser::VttDocument::parse(&args.input)?;
 
+    // Determine if we should filter unknown speakers:
+    // - Explicitly enabled with --filter-unknown
+    // - OR auto-enabled for Teams format (has voice tags) unless disabled with --no-filter-unknown
+    let should_filter = args.filter_unknown 
+        || (vtt_document.has_voice_tags && !args.no_filter_unknown);
+
+    // Filter cues if requested or auto-detected
+    let cues = if should_filter {
+        vtt_document
+            .cues
+            .into_iter()
+            .filter(|cue| cue.speaker.is_some())
+            .collect()
+    } else {
+        vtt_document.cues
+    };
+
     // Consolidate speaker segments
     let segments = consolidator::consolidate_cues(
-        &vtt_document.cues,
+        &cues,
         &args.unknown_speaker,
         args.include_timestamps,
     );
