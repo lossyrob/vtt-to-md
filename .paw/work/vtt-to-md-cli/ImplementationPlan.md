@@ -571,6 +571,8 @@ Wire up all components in `src/main.rs`:
 
 **Status**: ✅ Complete
 
+**Phase PR**: #8 - https://github.com/lossyrob/vtt-to-md/pull/8
+
 **Summary**: Successfully implemented Markdown generation and file output with comprehensive safeguards, multiple output modes, and full integration of all conversion pipeline components.
 
 **Key Accomplishments**:
