@@ -59,20 +59,16 @@ pub fn format_markdown(segments: &[SpeakerSegment], timestamp_mode: TimestampMod
                 }
             }
             TimestampMode::Each => {
-                // Split the text by sentences/cues and pair with timestamps
-                // For simplicity, we'll just prepend all timestamps at the beginning
-                // since the consolidated text doesn't preserve original cue boundaries
+                // TimestampMode::Each displays the first timestamp for each speaker segment
+                // with the full consolidated text. This is a simplified implementation that
+                // shows when the speaker turn began rather than splitting text by original
+                // cue boundaries (which are lost during consolidation).
+                // This aligns with the consolidator's text joining strategy.
                 if !segment.timestamps.is_empty() {
-                    for (i, timestamp) in segment.timestamps.iter().enumerate() {
-                        if i == 0 {
-                            result.push_str(&format!(
-                                "[{}] **{}:** {}\n\n",
-                                timestamp, segment.speaker, segment.text
-                            ));
-                            break; // For now, just show first timestamp with full text
-                            // A more sophisticated approach would split text per timestamp
-                        }
-                    }
+                    result.push_str(&format!(
+                        "[{}] **{}:** {}\n\n",
+                        segment.timestamps[0], segment.speaker, segment.text
+                    ));
                 } else {
                     result.push_str(&format!("**{}:** {}\n\n", segment.speaker, segment.text));
                 }

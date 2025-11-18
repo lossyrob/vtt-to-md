@@ -33,9 +33,11 @@ pub struct SpeakerSegment {
     pub speaker: String,
     /// The consolidated text from all consecutive cues by this speaker
     pub text: String,
-    /// Optional timestamp for the segment (based on TimestampMode)
+    /// Optional timestamp for the segment (used by TimestampMode::First)
     pub timestamp: Option<String>,
-    /// Optional list of all timestamps from original cues (for TimestampMode::Each)
+    /// Vector of all timestamps from original cues (used by TimestampMode::Each)
+    /// When TimestampMode::Each is used, the markdown formatter uses the first timestamp
+    /// to indicate when the speaker turn began.
     pub timestamps: Vec<String>,
 }
 
