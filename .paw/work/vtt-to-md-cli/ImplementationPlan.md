@@ -490,6 +490,8 @@ Handle:
 - Verify the speaker change detection correctly handles alternating speakers
 - Confirm timestamp handling for Each mode properly stores all timestamps in the vector
 
+**Phase PR**: #7 - https://github.com/lossyrob/vtt-to-md/pull/7
+
 ---
 
 ## Phase 5: Markdown Generation and File Output
