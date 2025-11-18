@@ -2,6 +2,19 @@
 //!
 //! This module defines the custom error types used throughout the application
 //! and maps them to BSD sysexits.h exit codes for consistent error reporting.
+//!
+//! # Example
+//!
+//! ```rust,ignore
+//! use std::path::PathBuf;
+//! use vtt_to_md::error::VttError;
+//!
+//! let error = VttError::FileNotFound {
+//!     path: PathBuf::from("missing.vtt")
+//! };
+//! let exit_code = error.exit_code();
+//! // Returns ExitCode with value 66 (EX_NOINPUT)
+//! ```
 
 #![allow(dead_code)]
 
@@ -51,6 +64,15 @@ pub enum VttError {
 
 impl VttError {
     /// Map error to appropriate BSD sysexits.h exit code.
+    ///
+    /// # Exit Code Mapping
+    ///
+    /// - `64` (EX_USAGE): Invalid command-line usage or conflicting arguments
+    /// - `65` (EX_DATAERR): Invalid VTT file format or parse errors
+    /// - `66` (EX_NOINPUT): Input file not found
+    /// - `73` (EX_CANTCREAT): Output file already exists without --force
+    /// - `74` (EX_IOERR): General I/O or write errors
+    /// - `77` (EX_NOPERM): Permission denied when accessing files
     pub fn exit_code(&self) -> ExitCode {
         let code = match self {
             VttError::UsageError { .. } => 64,       // EX_USAGE
