@@ -10,6 +10,8 @@ A Rust command-line tool for converting VTT (WebVTT) transcript files from meeti
 - **Smart Unknown Speaker Filtering**: Automatically filters out cues without speaker attribution for Teams-style VTT files (those with `<v>` tags). Can be disabled with `--no-filter-unknown`
 - **Flexible Timestamp Modes**: Include no timestamps, first timestamp per speaker turn, or all timestamps
 - **Custom Speaker Labels**: Customize the label for cues without speaker attribution
+- **Safe by Default**: Won't overwrite existing files without explicit `--force` flag
+- **Cross-platform**: Runs on Windows, Linux, and macOS with no runtime dependencies
 
 ## Installation
 
@@ -22,6 +24,8 @@ Or build from source:
 ```bash
 cargo build --release
 ```
+
+The binary will be in `target/release/vtt-to-md` (or `vtt-to-md.exe` on Windows).
 
 ## Usage
 
@@ -39,13 +43,15 @@ vtt-to-md input.vtt output.md --filter-unknown --include-timestamps first
 
 - `INPUT` - Path to the input VTT file (required)
 - `OUTPUT` - Path to the output Markdown file (optional, defaults to INPUT with .md extension)
-- `--force` - Overwrite existing output file
-- `--no-clobber` - Skip conversion if output file exists
+- `--force`, `-f` - Overwrite existing output file
+- `--no-clobber`, `-n` - Skip conversion if output file exists
 - `--stdout` - Print Markdown to stdout instead of writing to file
 - `--unknown-speaker LABEL` - Custom label for cues without speaker attribution (default: "Unknown")
 - `--filter-unknown` - Explicitly filter out cues without speaker attribution (auto-enabled for Teams-style VTT)
 - `--no-filter-unknown` - Disable automatic filtering for Teams-style VTT files
 - `--include-timestamps MODE` - Timestamp inclusion mode: `none` (default), `first`, or `each`
+- `--help`, `-h` - Display help text
+- `--version`, `-V` - Display version
 
 ### Examples
 
@@ -74,16 +80,38 @@ Force overwrite existing file:
 vtt-to-md "meeting.vtt" "notes.md" --force
 ```
 
+## Output Format
+
+The tool generates Markdown with speaker names in bold followed by their consolidated text:
+
+```markdown
+**Alice:** Hello everyone, thanks for joining. Let's start with the first agenda item.
+
+**Bob:** Sounds good. I'll share my screen.
+```
+
+Consecutive cues from the same speaker are merged into single paragraphs for natural reading flow.
+
 ## Building
 
 ```bash
 cargo build
 ```
 
+For release builds:
+```bash
+cargo build --release
+```
+
 ## Testing
 
 ```bash
 cargo test
+```
+
+Run with verbose output:
+```bash
+cargo test -- --nocapture
 ```
 
 ## Development
@@ -93,3 +121,11 @@ This project uses Rust 2024 edition. Make sure you have Rust installed:
 ```bash
 rustup update
 ```
+
+## Documentation
+
+For comprehensive documentation including architecture, design decisions, and testing guide, see [Docs.md](.paw/work/vtt-to-md-cli/Docs.md).
+
+## License
+
+See LICENSE file for details.
