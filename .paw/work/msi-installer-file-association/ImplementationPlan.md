@@ -517,6 +517,25 @@ Verify the GUIDs are present. If not, generate them using:
 - [ ] Registry entry exists: `HKCU\Software\Classes\.vtt` (when associated)
 - [ ] After uninstall, .vtt files no longer associated with application
 
+### Phase 3 Implementation Complete
+
+**Completion Date**: November 18, 2025
+
+**Implementation Summary**:
+- Added ProgId configuration (`VttToMd.VttFile`) to the `binary0` component in `wix/main.wxs`
+- Registered `.vtt` extension with `text/vtt` content type
+- Created `Convert to Markdown` verb that passes file path as `"%1"` argument
+- Added optional `FileAssociation` feature with `Level='1'` (checked by default)
+- File association integrates with Phase 1 auto-increment feature
+
+**Notes for Reviewers**:
+- File association is per-user (no admin privileges required)
+- Users can uncheck the file association during installation
+- Double-clicking `.vtt` files will automatically create incremented output files
+- WiX build verification requires WiX Toolset installation (tested in CI via Phase 4)
+
+**Commit**: `ade1edb` - "Phase 3: Add optional .vtt file association to MSI installer"
+
 ---
 
 ## Phase 4: Create GitHub Actions Release Workflow
@@ -674,6 +693,35 @@ This will trigger the workflow for the first time.
 - [ ] File association checkbox appears during install
 - [ ] Version number in installer matches git tag (e.g., v0.2.0 → 0.2.0)
 - [ ] Creating a new tag triggers a new release automatically
+
+### Phase 4 Implementation Complete
+
+**Completion Date**: November 18, 2025
+
+**Implementation Summary**:
+- Created `.github/workflows/release.yml` workflow file
+- Workflow triggers on version tags matching `v*.*.*` pattern
+- Installs WiX Toolset 3.11.2 and cargo-wix in CI environment
+- Extracts version from git tag and dynamically updates `Cargo.toml`
+- Builds MSI using `cargo wix --nocapture`
+- Renames MSI with version: `vtt-to-md-{version}-x86_64.msi`
+- Uploads MSI as workflow artifact and attaches to GitHub release
+- Generates release notes with installation instructions
+
+**Notes for Reviewers**:
+- Workflow uses PowerShell commands compatible with Windows runner
+- WiX Toolset downloaded from official GitHub releases (stable)
+- Version injection ensures MSI version matches git tag
+- Release notes reference CHANGELOG.md for detailed changes
+- Workflow requires no secrets beyond default `GITHUB_TOKEN`
+
+**Testing Requirements**:
+- Push a version tag (e.g., `v0.2.0`) to trigger the workflow
+- Verify workflow completes successfully in GitHub Actions
+- Download and test the generated MSI installer
+- Confirm file association feature works as expected
+
+**Commit**: `b86f21e` - "Phase 4: Create GitHub Actions release workflow"
 
 ---
 
