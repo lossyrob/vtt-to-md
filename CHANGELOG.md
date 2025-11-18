@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Windows MSI installer with optional .vtt file association for double-click conversion
+- Auto-increment filename collision handling (creates file.md, file (1).md, file (2).md, etc.)
+- GitHub Actions release workflow triggered by version tags
+- --no-auto-increment flag for backwards compatibility with old overwrite behavior
+
 ## [0.1.0] - 2025-11-18
 
 ### Added
