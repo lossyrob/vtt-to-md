@@ -86,7 +86,7 @@
         <Property Id='DiskPrompt' Value='vtt-to-md Installation'/>
 
         <Directory Id='TARGETDIR' Name='SourceDir'>
-            <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
+            <Directory Id='LocalAppDataFolder' Name='AppData'>
                 <Directory Id='APPLICATIONFOLDER' Name='vtt-to-md'>
                     <!--
                       Disabling the license sidecar file in the installer is a two step process:
@@ -111,7 +111,7 @@
                                 Permanent='no'
                                 Part='last'
                                 Action='set'
-                                System='yes'/>
+                                System='no'/>
                         </Component>
                         <Component Id='binary0' Guid='*'>
                             <File
