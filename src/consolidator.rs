@@ -3,6 +3,25 @@
 //! This module implements the logic to merge consecutive cues from the same speaker
 //! into coherent paragraphs. It handles speaker changes, applies unknown speaker labels,
 //! and joins text intelligently while respecting sentence boundaries.
+//!
+//! # Example
+//!
+//! ```rust,ignore
+//! use vtt_to_md::consolidator::consolidate_cues;
+//! use vtt_to_md::parser::Cue;
+//! use vtt_to_md::cli::TimestampMode;
+//!
+//! let cues = vec![
+//!     Cue { speaker: Some("Alice".to_string()), text: "Hello.".to_string(), timestamp: Some("00:00:01.000".to_string()) },
+//!     Cue { speaker: Some("Alice".to_string()), text: "How are you?".to_string(), timestamp: Some("00:00:02.000".to_string()) },
+//!     Cue { speaker: Some("Bob".to_string()), text: "I'm fine!".to_string(), timestamp: Some("00:00:03.000".to_string()) },
+//! ];
+//!
+//! let segments = consolidate_cues(&cues, "Unknown", TimestampMode::None);
+//! // Result: 2 segments - Alice's text consolidated, Bob separate
+//! assert_eq!(segments.len(), 2);
+//! assert_eq!(segments[0].text, "Hello. How are you?");
+//! ```
 
 #![allow(dead_code)]
 
@@ -132,18 +151,26 @@ pub fn consolidate_cues(
 ///
 /// This function joins text segments with single spaces, ensuring natural reading flow
 /// while respecting sentence boundaries. It handles cases where segments may already
-/// end with terminal punctuation.
+/// end with terminal punctuation. Empty or whitespace-only segments are skipped.
+///
+/// # Arguments
+///
+/// * `texts` - A slice of strings to join
+///
+/// # Returns
+///
+/// A single string with all non-empty segments joined by single spaces.
 fn join_texts(texts: &[String]) -> String {
     let mut result = String::new();
 
-    for (i, text) in texts.iter().enumerate() {
+    for text in texts.iter() {
         let text = text.trim();
 
         if text.is_empty() {
             continue;
         }
 
-        if i > 0 && !result.is_empty() {
+        if !result.is_empty() {
             // Add space between segments
             result.push(' ');
         }
