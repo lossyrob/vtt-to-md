@@ -57,6 +57,22 @@ pub struct Args {
     )]
     pub unknown_speaker: String,
 
+    /// Filter out cues without speaker attribution
+    #[arg(
+        long,
+        help = "Filter out cues without speaker attribution (removes 'Unknown' speaker segments).\n\
+                Auto-enabled for Teams-style VTT files with <v> tags unless explicitly disabled with --no-filter-unknown"
+    )]
+    pub filter_unknown: bool,
+
+    /// Disable automatic filtering of unknown speakers for Teams-style VTT files
+    #[arg(
+        long,
+        conflicts_with = "filter_unknown",
+        help = "Disable automatic filtering of unknown speakers for Teams-style VTT files"
+    )]
+    pub no_filter_unknown: bool,
+
     /// Timestamp inclusion mode
     #[arg(
         long,

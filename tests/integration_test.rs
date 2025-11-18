@@ -357,3 +357,140 @@ fn test_custom_output_path() {
     let markdown = fs::read_to_string(&output_path).expect("Failed to read output file");
     assert!(markdown.contains("**Alice:** Hello"));
 }
+
+#[test]
+fn test_multiline_voice_tags() {
+    let temp_dir = TempDir::new().unwrap();
+    // Test VTT with multi-line content within a single voice tag
+    // This mimics the Teams format where text can span multiple lines within one cue
+    let vtt_content = "WEBVTT\n\n\
+13c7246d-4823-4d01-9e30-b633355ec6bb/31-0\n\
+00:00:14.458 --> 00:00:18.893\n\
+<v Speaker1>And and that we can go.\n\
+But imagine for the user experience being</v>\n\
+\n\
+13c7246d-4823-4d01-9e30-b633355ec6bb/31-1\n\
+00:00:18.893 --> 00:00:24.335\n\
+<v Speaker1>you have a prompt that blue like kind of\n\
+truly brings up entire sample app life,</v>\n\
+\n\
+13c7246d-4823-4d01-9e30-b633355ec6bb/31-2\n\
+00:00:24.335 --> 00:00:24.738\n\
+<v Speaker1>right?</v>\n";
+    let input_path = create_test_vtt(&temp_dir, "multiline.vtt", vtt_content);
+
+    let vtt_to_md = get_vtt_to_md_path();
+    let output = Command::new(&vtt_to_md)
+        .arg(input_path.to_str().unwrap())
+        .arg("--stdout")
+        .output()
+        .expect("Failed to execute vtt-to-md");
+
+    assert!(
+        output.status.success(),
+        "Command failed with multi-line voice tags: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    // The key test: all three parts should be consolidated into one paragraph
+    // and the text should include ALL content from all three cues
+    assert!(stdout.contains("**Speaker1:**"), "Speaker should be present");
+    assert!(
+        stdout.contains("But imagine for the user experience being"),
+        "Multi-line content from first cue should be preserved"
+    );
+    assert!(
+        stdout.contains("you have a prompt"),
+        "Content from second cue should be present"
+    );
+    assert!(
+        stdout.contains("truly brings up entire sample app life"),
+        "Multi-line content from second cue should be preserved"
+    );
+    assert!(stdout.contains("right?"), "Content from third cue should be present");
+    
+    // Verify it's all in one paragraph (no extra ** for same speaker)
+    let speaker_count = stdout.matches("**Speaker1:**").count();
+    assert_eq!(
+        speaker_count, 1,
+        "All consecutive cues from same speaker should be consolidated into one paragraph"
+    );
+}
+
+#[test]
+fn test_filter_unknown_flag() {
+    let temp_dir = TempDir::new().unwrap();
+    // Test VTT with speaker cues and cues without speakers (unknown)
+    let vtt_content = "WEBVTT\n\n\
+00:00:00.000 --> 00:00:02.000\n\
+<v Alice>Hello world</v>\n\
+\n\
+00:00:02.000 --> 00:00:03.000\n\
+Umm.\n\
+\n\
+00:00:03.000 --> 00:00:05.000\n\
+<v Alice>How are you?</v>\n\
+\n\
+00:00:05.000 --> 00:00:06.000\n\
+Yeah.\n\
+\n\
+00:00:06.000 --> 00:00:08.000\n\
+<v Bob>I'm fine, thanks!</v>\n";
+    let input_path = create_test_vtt(&temp_dir, "test.vtt", vtt_content);
+
+    let vtt_to_md = get_vtt_to_md_path();
+    
+    // Test without flags - Teams format auto-detected, so Unknown speakers should be filtered
+    let output = Command::new(&vtt_to_md)
+        .arg(input_path.to_str().unwrap())
+        .arg("--stdout")
+        .output()
+        .expect("Failed to execute vtt-to-md");
+
+    assert!(output.status.success(), "Command failed without flags");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("**Unknown:**"), "Teams format auto-filters Unknown speakers");
+    assert!(!stdout.contains("Umm."), "Should not contain unknown cue text");
+    
+    // Test with --no-filter-unknown - should include Unknown speakers
+    let output = Command::new(&vtt_to_md)
+        .arg(input_path.to_str().unwrap())
+        .arg("--no-filter-unknown")
+        .arg("--stdout")
+        .output()
+        .expect("Failed to execute vtt-to-md with --no-filter-unknown");
+
+    assert!(
+        output.status.success(),
+        "Command failed with --no-filter-unknown"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("**Unknown:**"), "Should contain Unknown speaker when not filtered");
+    assert!(stdout.contains("Umm."), "Should contain unknown cue text");
+    assert!(stdout.contains("Yeah."), "Should contain unknown cue text");
+    
+    // Test with explicit --filter-unknown flag - should also exclude Unknown speakers
+    let output = Command::new(&vtt_to_md)
+        .arg(input_path.to_str().unwrap())
+        .arg("--filter-unknown")
+        .arg("--stdout")
+        .output()
+        .expect("Failed to execute vtt-to-md with --filter-unknown");
+
+    assert!(
+        output.status.success(),
+        "Command failed with --filter-unknown"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("**Unknown:**"), "Should not contain Unknown speaker");
+    assert!(!stdout.contains("Umm."), "Should not contain unknown cue text");
+    assert!(!stdout.contains("Yeah."), "Should not contain unknown cue text");
+    
+    // Verify Alice and Bob are still present and consolidated (in filtered output)
+    assert!(stdout.contains("**Alice:** Hello world How are you?"), "Alice's cues should be consolidated");
+    assert!(stdout.contains("**Bob:** I'm fine, thanks!"), "Bob should be present");
+}

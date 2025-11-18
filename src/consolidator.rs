@@ -434,4 +434,36 @@ mod tests {
         // Test empty input
         assert_eq!(join_texts(&[]), "");
     }
+
+    #[test]
+    fn test_join_texts_mid_sentence_breaks() {
+        // Test text that ends mid-sentence (no terminal punctuation)
+        // and should be joined without space to the next fragment
+        assert_eq!(
+            join_texts(&[
+                "But imagine for the user experience being".to_string(),
+                "you have a prompt that blue like kind of".to_string(),
+            ]),
+            "But imagine for the user experience being you have a prompt that blue like kind of"
+        );
+
+        // Test mixed: some complete sentences, some fragments
+        assert_eq!(
+            join_texts(&[
+                "First sentence.".to_string(),
+                "Fragment without ending".to_string(),
+                "continues here.".to_string(),
+            ]),
+            "First sentence. Fragment without ending continues here."
+        );
+
+        // Test text ending with comma (should join with space)
+        assert_eq!(
+            join_texts(&[
+                "Hello,".to_string(),
+                "how are you?".to_string(),
+            ]),
+            "Hello, how are you?"
+        );
+    }
 }
