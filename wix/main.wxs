@@ -120,6 +120,13 @@
                                 DiskId='1'
                                 Source='$(var.CargoTargetBinDir)\vtt-to-md.exe'
                                 KeyPath='yes'/>
+                            
+                            <!-- File Association ProgId -->
+                            <ProgId Id='VttToMd.VttFile' Description='VTT Transcript File'>
+                                <Extension Id='vtt' ContentType='text/vtt'>
+                                    <Verb Id='open' Command='Convert to Markdown' Argument='&quot;%1&quot;' />
+                                </Extension>
+                            </ProgId>
                         </Component>
                     </Directory>
                 </Directory>
@@ -150,6 +157,14 @@
                 Level='1'
                 Absent='allow'>
                 <ComponentRef Id='Path'/>
+            </Feature>
+            
+            <Feature
+                Id='FileAssociation'
+                Title='File Association'
+                Description='Associate .vtt files with VTT to Markdown (double-click to convert)'
+                Level='1'
+                AllowAdvertise='no'>
             </Feature>
         </Feature>
 
