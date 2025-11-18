@@ -46,16 +46,30 @@ jobs:
           Get-Content Cargo.toml | Select-String "version"
       
       - name: Build MSI
-        run: cargo wix --nocapture -- -sice:ICE38 -sice:ICE57 -sice:ICE64 -sice:ICE91
-      
-      - name: Rename MSI with version
         shell: pwsh
         run: |
-          $version = $env:VERSION
-          $msiFile = Get-ChildItem -Path target/wix/*.msi | Select-Object -First 1
-          $newName = "vtt-to-md-$version-x86_64.msi"
-          Rename-Item -Path $msiFile.FullName -NewName $newName
-          echo "MSI_PATH=target/wix/$newName" >> $env:GITHUB_ENV
+          # Build the release binary first
+          cargo build --release
+          
+          # Run candle to compile the WXS file
+          & "wix-toolset\candle.exe" -nologo -arch x64 `
+            -dCargoTargetBinDir="target\release" `
+            -dCargoTargetDir="target" `
+            -dCargoProfile="release" `
+            -dVersion="$env:VERSION" `
+            wix\main.wxs -out target\wix\main.wixobj
+          
+          # Run light with ICE suppressions
+          New-Item -ItemType Directory -Force -Path target\wix | Out-Null
+          & "wix-toolset\light.exe" -nologo `
+            -sice:ICE38 -sice:ICE57 -sice:ICE64 -sice:ICE91 `
+            -out "target\wix\vtt-to-md-$env:VERSION-x86_64.msi" `
+            target\wix\main.wixobj
+      
+      - name: Set MSI path
+        shell: pwsh
+        run: |
+          echo "MSI_PATH=target/wix/vtt-to-md-$env:VERSION-x86_64.msi" >> $env:GITHUB_ENV
       
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v4
