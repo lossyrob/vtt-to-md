@@ -124,7 +124,7 @@
                             <!-- File Association ProgId -->
                             <ProgId Id='VttToMd.VttFile' Description='VTT Transcript File'>
                                 <Extension Id='vtt' ContentType='text/vtt'>
-                                    <Verb Id='open' Command='Convert to Markdown' Argument='&quot;%1&quot;' />
+                                    <Verb Id='open' Command='Convert to Markdown' TargetFile='exe0' Argument='&quot;%1&quot;' />
                                 </Extension>
                             </ProgId>
                         </Component>
