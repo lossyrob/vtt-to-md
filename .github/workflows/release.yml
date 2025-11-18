@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-msi:
+    name: Build MSI Installer
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Extract version from tag
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF -replace 'refs/tags/v', ''
+          echo "VERSION=$tag" >> $env:GITHUB_ENV
+          echo "Building version $tag"
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install WiX Toolset
+        shell: pwsh
+        run: |
+          # Download WiX 3.11.2 binaries
+          Invoke-WebRequest -Uri "https://github.com/wixtoolset/wix3/releases/download/wix3112rtm/wix311-binaries.zip" -OutFile wix.zip
+          Expand-Archive -Path wix.zip -DestinationPath wix-toolset
+          $wixPath = (Get-Item "wix-toolset").FullName
+          echo "$wixPath" >> $env:GITHUB_PATH
+          # Verify installation
+          & "$wixPath\candle.exe" -?
+      
+      - name: Install cargo-wix
+        run: cargo install cargo-wix
+      
+      - name: Update Cargo.toml version
+        shell: pwsh
+        run: |
+          $version = $env:VERSION
+          (Get-Content Cargo.toml) -replace 'version = "0.1.0"', "version = `"$version`"" | Set-Content Cargo.toml
+          Get-Content Cargo.toml | Select-String "version"
+      
+      - name: Build MSI
+        run: cargo wix --nocapture
+      
+      - name: Rename MSI with version
+        shell: pwsh
+        run: |
+          $version = $env:VERSION
+          $msiFile = Get-ChildItem -Path target/wix/*.msi | Select-Object -First 1
+          $newName = "vtt-to-md-$version-x86_64.msi"
+          Rename-Item -Path $msiFile.FullName -NewName $newName
+          echo "MSI_PATH=target/wix/$newName" >> $env:GITHUB_ENV
+      
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vtt-to-md-msi
+          path: ${{ env.MSI_PATH }}
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ env.MSI_PATH }}
+          body: |
+            ## VTT to Markdown ${{ env.VERSION }}
+            
+            Windows MSI installer for vtt-to-md.
+            
+            ### Installation
+            Download the MSI file and run it. Optionally enable .vtt file association during installation.
+            
+            ### Changes
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
