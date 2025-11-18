@@ -16,8 +16,6 @@
 //! // Returns ExitCode with value 66 (EX_NOINPUT)
 //! ```
 
-#![allow(dead_code)]
-
 use std::io;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -59,6 +57,7 @@ pub enum VttError {
 
     /// Invalid command-line usage.
     #[error("Invalid usage: {reason}")]
+    #[allow(dead_code)] // Reserved for future usage validation
     UsageError { reason: String },
 }
 

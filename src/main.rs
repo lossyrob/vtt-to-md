@@ -26,18 +26,36 @@ fn main() -> ExitCode {
         return e.exit_code();
     }
 
-    // Placeholder for conversion logic (will be implemented in later phases)
-    println!("VTT to Markdown converter");
-    println!("Input file: {}", args.input.display());
-    if let Some(output) = args.get_output_path() {
-        println!("Output file: {}", output.display());
-    } else {
-        println!("Output: stdout");
+    // Run the conversion
+    if let Err(e) = run_conversion(&args) {
+        eprintln!("Error: {}", e);
+        return e.exit_code();
     }
-    println!("Force overwrite: {}", args.force);
-    println!("No clobber: {}", args.no_clobber);
-    println!("Unknown speaker label: {}", args.unknown_speaker);
-    println!("Timestamp mode: {:?}", args.include_timestamps);
 
     ExitCode::SUCCESS
+}
+
+/// Run the VTT to Markdown conversion pipeline.
+fn run_conversion(args: &Args) -> Result<(), error::VttError> {
+    // Parse the VTT file
+    let vtt_document = parser::VttDocument::parse(&args.input)?;
+
+    // Consolidate speaker segments
+    let segments = consolidator::consolidate_cues(
+        &vtt_document.cues,
+        &args.unknown_speaker,
+        args.include_timestamps,
+    );
+
+    // Format as Markdown
+    let markdown_content = markdown::format_markdown(&segments, args.include_timestamps);
+
+    // Write output (either to file or stdout)
+    if args.stdout {
+        markdown::write_markdown_stdout(&markdown_content)?;
+    } else if let Some(output_path) = args.get_output_path() {
+        markdown::write_markdown_file(&markdown_content, output_path, args.force, args.no_clobber)?;
+    }
+
+    Ok(())
 }
