@@ -73,6 +73,13 @@ pub struct Args {
     )]
     pub no_filter_unknown: bool,
 
+    /// Disable auto-increment of output filename on collision
+    #[arg(
+        long,
+        help = "Disable auto-increment of output filename when file exists (use with --force to overwrite)"
+    )]
+    pub no_auto_increment: bool,
+
     /// Timestamp inclusion mode
     #[arg(
         long,
@@ -108,7 +115,13 @@ impl Args {
     pub fn validate(&mut self) -> Result<(), VttError> {
         // Derive output path if not specified and not using stdout
         if self.output.is_none() && !self.stdout {
-            self.output = Some(derive_output_path(&self.input));
+            if self.no_auto_increment {
+                // Old behavior: simple extension replacement
+                self.output = Some(self.input.with_extension("md"));
+            } else {
+                // New default: auto-increment on collision
+                self.output = Some(derive_output_path(&self.input));
+            }
         }
 
         // Check if input and output are the same file
@@ -134,8 +147,44 @@ impl Args {
 }
 
 /// Derive output path from input path by replacing extension with .md
+/// and finding next available filename if collision occurs.
 fn derive_output_path(input: &Path) -> PathBuf {
-    input.with_extension("md")
+    let base_output = input.with_extension("md");
+    find_available_path(&base_output)
+}
+
+/// Find next available path by adding (N) suffix if file exists.
+///
+/// Given path/to/file.md, tries:
+/// - path/to/file.md
+/// - path/to/file (1).md
+/// - path/to/file (2).md
+///
+/// etc.
+fn find_available_path(base_path: &Path) -> PathBuf {
+    if !base_path.exists() {
+        return base_path.to_path_buf();
+    }
+
+    let parent = base_path.parent().unwrap_or_else(|| Path::new(""));
+    let extension = base_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    let stem = base_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+
+    for i in 1..=9999 {
+        let new_name = if extension.is_empty() {
+            format!("{} ({})", stem, i)
+        } else {
+            format!("{} ({}).{}", stem, i, extension)
+        };
+        let new_path = parent.join(new_name);
+        if !new_path.exists() {
+            return new_path;
+        }
+    }
+
+    // Fallback: if we somehow exhaust 9999 attempts, return the base path
+    // (will likely fail during write, but this is an extreme edge case)
+    base_path.to_path_buf()
 }
 
 /// Check if two paths refer to the same file.
