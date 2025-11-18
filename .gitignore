@@ -1,1 +1,4 @@
 /target
+/wix/*.wixobj
+/wix/*.wixpdb
+*.msi
