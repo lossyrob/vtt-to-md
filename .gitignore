@@ -2,3 +2,4 @@
 /wix/*.wixobj
 /wix/*.wixpdb
 *.msi
+wix-toolset
