@@ -59,9 +59,10 @@ jobs:
             -dVersion="$env:VERSION" `
             wix\main.wxs -out target\wix\main.wixobj
           
-          # Run light with ICE suppressions
+          # Run light with ICE suppressions and WixUI extension
           New-Item -ItemType Directory -Force -Path target\wix | Out-Null
           & "wix-toolset\light.exe" -nologo `
+            -ext WixUIExtension `
             -sice:ICE38 -sice:ICE57 -sice:ICE64 -sice:ICE91 `
             -out "target\wix\vtt-to-md-$env:VERSION-x86_64.msi" `
             target\wix\main.wixobj
