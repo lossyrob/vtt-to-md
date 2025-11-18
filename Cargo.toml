@@ -20,3 +20,9 @@ upgrade-guid = "974B7017-9871-4FED-81ED-2226B2CBAD99"
 path-guid = "81B1E74D-EE61-445C-9465-5F30555744D0"
 license = false
 eula = false
+# Suppress ICE validation checks that are incompatible with per-user installs
+# ICE38: Per-user components with file KeyPath
+# ICE57: Mixed per-user and per-machine data  
+# ICE64: User profile directories not in RemoveFile table
+# ICE91: Per-user directory warnings for ALLUSERS
+light-flags = ["-sice:ICE38", "-sice:ICE57", "-sice:ICE64", "-sice:ICE91"]
