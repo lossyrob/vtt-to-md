@@ -14,7 +14,7 @@ The built-in default remains `none` for users who do not configure anything.
 
 - `none`: do not include timestamps in Markdown output
 - `first`: include the first timestamp per speaker turn
-- `each`: include a timestamp for every cue
+- `each`: include cue timestamps (currently prints the first timestamp of the turn due to consolidation)
 
 ### Resolution and precedence
 

@@ -56,7 +56,10 @@ vtt-to-md input.vtt output.md --filter-unknown --include-timestamps first
 - `--unknown-speaker LABEL` - Custom label for cues without speaker attribution (default: "Unknown")
 - `--filter-unknown` - Explicitly filter out cues without speaker attribution (auto-enabled for Teams-style VTT)
 - `--no-filter-unknown` - Disable automatic filtering for Teams-style VTT files
-- `--include-timestamps MODE` - Timestamp inclusion mode: `none`, `first`, or `each`
+- `--include-timestamps MODE` - Timestamp inclusion mode:
+	- `none`: do not include timestamps
+	- `first`: include the first timestamp per speaker turn (the first cue in the consolidated turn)
+	- `each`: include cue timestamps (currently prints the first timestamp of the turn due to consolidation)
 - `--help`, `-h` - Display help text
 - `--version`, `-V` - Display version
 
@@ -105,6 +108,11 @@ vtt-to-md "teams-meeting.vtt" --no-filter-unknown
 Include first timestamp per speaker turn:
 ```bash
 vtt-to-md "meeting.vtt" --include-timestamps first
+```
+
+Include cue timestamps (see note above about consolidation):
+```bash
+vtt-to-md "meeting.vtt" --include-timestamps each
 ```
 
 Output to stdout with custom unknown speaker label:

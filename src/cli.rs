@@ -85,7 +85,7 @@ pub struct Args {
     #[arg(
         long,
         value_name = "MODE",
-        help = "Timestamp inclusion mode: none, first (first cue of each speaker turn), or each (every cue)"
+        help = "Timestamp inclusion mode. Values: none (no timestamps), first (first cue of each speaker turn), each (cue timestamps; currently shows the first timestamp per turn due to consolidation)"
     )]
     pub include_timestamps: Option<TimestampMode>,
 }
@@ -94,10 +94,19 @@ pub struct Args {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum TimestampMode {
     /// Don't include timestamps in output
+    #[value(name = "none", help = "Do not include timestamps")]
     None,
     /// Include timestamp from first cue of each speaker turn
+    #[value(
+        name = "first",
+        help = "Include the first timestamp per speaker turn (first cue in the consolidated turn)"
+    )]
     First,
-    /// Include timestamp for each original cue
+    /// Include cue timestamps (currently shows the first timestamp per speaker turn)
+    #[value(
+        name = "each",
+        help = "Include cue timestamps (currently shows the first timestamp per turn due to consolidation)"
+    )]
     Each,
 }
 

@@ -154,7 +154,7 @@ The tool accepts the following command-line options:
 
 **Options:**
 - `--unknown-speaker <LABEL>`: Custom label for cues without speaker attribution (default: "Unknown")
-- `--include-timestamps <MODE>`: Timestamp inclusion mode—`none`, `first`, or `each`
+- `--include-timestamps <MODE>`: Timestamp inclusion mode—`none` (no timestamps), `first` (first cue of each speaker turn), or `each` (cue timestamps; currently shows the first timestamp per turn due to consolidation)
 
 #### Default Timestamp Mode (Optional)
 
