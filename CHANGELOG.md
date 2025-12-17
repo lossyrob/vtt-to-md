@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auto-increment filename collision handling (creates file.md, file (1).md, file (2).md, etc.)
 - GitHub Actions release workflow triggered by version tags
 - --no-auto-increment flag for backwards compatibility with old overwrite behavior
+- Optional default timestamp mode when `--include-timestamps` is omitted (precedence: CLI > env `VTT_TO_MD_INCLUDE_TIMESTAMPS` > per-user config > built-in `none`)
 
 ## [0.1.0] - 2025-11-18
 

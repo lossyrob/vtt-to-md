@@ -154,7 +154,35 @@ The tool accepts the following command-line options:
 
 **Options:**
 - `--unknown-speaker <LABEL>`: Custom label for cues without speaker attribution (default: "Unknown")
-- `--include-timestamps <MODE>`: Timestamp inclusion mode—`none` (default), `first`, or `each`
+- `--include-timestamps <MODE>`: Timestamp inclusion mode—`none`, `first`, or `each`
+
+#### Default Timestamp Mode (Optional)
+
+If you omit `--include-timestamps`, `vtt-to-md` can apply a per-user default timestamp mode.
+
+Precedence (highest → lowest): **CLI flag > environment variable > config file > built-in default (`none`)**.
+
+**Environment variable**
+
+- `VTT_TO_MD_INCLUDE_TIMESTAMPS=none|first|each`
+
+**Per-user config file**
+
+Create `config.toml` at the platform config location:
+
+- Windows: `%APPDATA%\\vtt-to-md\\config.toml`
+- Linux: `$XDG_CONFIG_HOME/vtt-to-md/config.toml` (fallback: `~/.config/vtt-to-md/config.toml`)
+- macOS: `~/Library/Application Support/vtt-to-md/config.toml`
+
+Example:
+
+```toml
+include_timestamps = "first"
+```
+
+**Invalid/unreadable values**
+
+If `VTT_TO_MD_INCLUDE_TIMESTAMPS` is set but empty/invalid, or if the config file exists but cannot be read/parsed, the conversion continues using the next fallback in precedence order and prints a non-fatal `Warning:` message to stderr.
 
 **Built-in:**
 - `--help`, `-h`: Display help text

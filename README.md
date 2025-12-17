@@ -56,11 +56,39 @@ vtt-to-md input.vtt output.md --filter-unknown --include-timestamps first
 - `--unknown-speaker LABEL` - Custom label for cues without speaker attribution (default: "Unknown")
 - `--filter-unknown` - Explicitly filter out cues without speaker attribution (auto-enabled for Teams-style VTT)
 - `--no-filter-unknown` - Disable automatic filtering for Teams-style VTT files
-- `--include-timestamps MODE` - Timestamp inclusion mode: `none` (default), `first`, or `each`
+- `--include-timestamps MODE` - Timestamp inclusion mode: `none`, `first`, or `each`
 - `--help`, `-h` - Display help text
 - `--version`, `-V` - Display version
 
 **Note:** By default, if the output file exists, a numbered suffix is added (e.g., `meeting.md`, `meeting (1).md`, `meeting (2).md`). Use `--no-auto-increment` to restore the old behavior.
+
+### Default Timestamp Mode (Optional)
+
+If you omit `--include-timestamps`, `vtt-to-md` can still include timestamps by using an optional per-user default.
+
+Precedence (highest → lowest): **CLI flag > environment variable > config file > built-in default (`none`)**.
+
+**Environment variable**
+
+- `VTT_TO_MD_INCLUDE_TIMESTAMPS=none|first|each`
+
+**Per-user config file**
+
+Create `config.toml` at the standard per-user config location:
+
+- Windows: `%APPDATA%\vtt-to-md\config.toml`
+- Linux: `$XDG_CONFIG_HOME/vtt-to-md/config.toml` (or `~/.config/vtt-to-md/config.toml`)
+- macOS: `~/Library/Application Support/vtt-to-md/config.toml`
+
+Example `config.toml`:
+
+```toml
+include_timestamps = "first"
+```
+
+**Invalid/unreadable values**
+
+If the env var or config file is present but invalid/unreadable, the conversion continues using the next fallback in precedence order and prints a non-fatal warning to stderr.
 
 ### Examples
 
