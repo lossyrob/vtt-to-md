@@ -40,6 +40,54 @@ fn create_test_vtt(dir: &TempDir, filename: &str, content: &str) -> PathBuf {
     path
 }
 
+fn new_test_command(vtt_to_md: &PathBuf) -> (Command, TempDir) {
+    let config_root = TempDir::new().expect("Failed to create temp config directory");
+    let mut cmd = Command::new(vtt_to_md);
+
+    // Ensure tests are not affected by user environment/config.
+    cmd.env_remove("VTT_TO_MD_INCLUDE_TIMESTAMPS");
+
+    // Point the per-user config directory at a temp folder.
+    #[cfg(target_os = "windows")]
+    cmd.env("APPDATA", config_root.path());
+    #[cfg(target_os = "linux")]
+    cmd.env("XDG_CONFIG_HOME", config_root.path());
+    #[cfg(target_os = "macos")]
+    cmd.env("HOME", config_root.path());
+
+    (cmd, config_root)
+}
+
+fn test_config_file_path(config_root: &TempDir) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        return config_root
+            .path()
+            .join("Library")
+            .join("Application Support")
+            .join("vtt-to-md")
+            .join("config.toml");
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        return config_root
+            .path()
+            .join("vtt-to-md")
+            .join("config.toml");
+    }
+}
+
+fn write_test_config(config_root: &TempDir, contents: &str) -> PathBuf {
+    let path = test_config_file_path(config_root);
+    let parent = path
+        .parent()
+        .expect("Config file path should have a parent directory");
+    fs::create_dir_all(parent).expect("Failed to create config directory");
+    fs::write(&path, contents).expect("Failed to write config file");
+    path
+}
+
 const SIMPLE_VTT: &str = "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v Alice>Hello world</v>\n";
 
 #[test]
@@ -50,7 +98,8 @@ fn test_basic_conversion() {
     let output_path = temp_dir.path().join("test.md");
 
     let vtt_to_md = get_vtt_to_md_path();
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .output()
         .expect("Failed to execute vtt-to-md");
@@ -78,7 +127,8 @@ fn test_force_flag_overwrites() {
     fs::write(&output_path, "existing content").expect("Failed to create existing file");
 
     let vtt_to_md = get_vtt_to_md_path();
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .arg("--no-auto-increment")
         .arg("--force")
@@ -107,7 +157,8 @@ fn test_no_clobber_flag_skips() {
     fs::write(&output_path, "existing content").expect("Failed to create existing file");
 
     let vtt_to_md = get_vtt_to_md_path();
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .arg("--no-clobber")
         .output()
@@ -130,7 +181,8 @@ fn test_stdout_flag() {
     let output_path = temp_dir.path().join("test.md");
 
     let vtt_to_md = get_vtt_to_md_path();
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .arg("--stdout")
         .output()
@@ -153,7 +205,8 @@ fn test_unknown_speaker_flag() {
     let input_path = create_test_vtt(&temp_dir, "test.vtt", vtt_content);
 
     let vtt_to_md = get_vtt_to_md_path();
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .arg("--unknown-speaker")
         .arg("Narrator")
@@ -177,7 +230,8 @@ fn test_include_timestamps_first() {
     let input_path = create_test_vtt(&temp_dir, "test.vtt", vtt_content);
 
     let vtt_to_md = get_vtt_to_md_path();
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .arg("--include-timestamps")
         .arg("first")
@@ -202,7 +256,8 @@ fn test_include_timestamps_each() {
     let input_path = create_test_vtt(&temp_dir, "test.vtt", vtt_content);
 
     let vtt_to_md = get_vtt_to_md_path();
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .arg("--include-timestamps")
         .arg("each")
@@ -223,7 +278,8 @@ fn test_include_timestamps_each() {
 #[test]
 fn test_file_not_found_error() {
     let vtt_to_md = get_vtt_to_md_path();
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg("nonexistent.vtt")
         .output()
         .expect("Failed to execute vtt-to-md");
@@ -246,7 +302,8 @@ fn test_invalid_vtt_format() {
     let input_path = create_test_vtt(&temp_dir, "invalid.vtt", invalid_content);
 
     let vtt_to_md = get_vtt_to_md_path();
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .arg("--stdout")
         .output()
@@ -274,7 +331,8 @@ fn test_output_exists_without_force() {
     fs::write(&output_path, "existing content").expect("Failed to create existing file");
 
     let vtt_to_md = get_vtt_to_md_path();
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .arg("--no-auto-increment")
         .output()
@@ -301,7 +359,8 @@ fn test_consolidate_consecutive_speakers() {
     let input_path = create_test_vtt(&temp_dir, "test.vtt", vtt_content);
 
     let vtt_to_md = get_vtt_to_md_path();
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .arg("--stdout")
         .output()
@@ -322,7 +381,8 @@ fn test_path_with_spaces() {
     let output_path = temp_dir.path().join("test file.md");
 
     let vtt_to_md = get_vtt_to_md_path();
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .output()
         .expect("Failed to execute vtt-to-md");
@@ -346,7 +406,8 @@ fn test_custom_output_path() {
     let output_path = temp_dir.path().join("custom_output.md");
 
     let vtt_to_md = get_vtt_to_md_path();
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .arg(output_path.to_str().unwrap())
         .output()
@@ -384,7 +445,8 @@ truly brings up entire sample app life,</v>\n\
     let input_path = create_test_vtt(&temp_dir, "multiline.vtt", vtt_content);
 
     let vtt_to_md = get_vtt_to_md_path();
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .arg("--stdout")
         .output()
@@ -447,7 +509,8 @@ Yeah.\n\
     let vtt_to_md = get_vtt_to_md_path();
     
     // Test without flags - Teams format auto-detected, so Unknown speakers should be filtered
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .arg("--stdout")
         .output()
@@ -459,7 +522,8 @@ Yeah.\n\
     assert!(!stdout.contains("Umm."), "Should not contain unknown cue text");
     
     // Test with --no-filter-unknown - should include Unknown speakers
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .arg("--no-filter-unknown")
         .arg("--stdout")
@@ -477,7 +541,8 @@ Yeah.\n\
     assert!(stdout.contains("Yeah."), "Should contain unknown cue text");
     
     // Test with explicit --filter-unknown flag - should also exclude Unknown speakers
-    let output = Command::new(&vtt_to_md)
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(input_path.to_str().unwrap())
         .arg("--filter-unknown")
         .arg("--stdout")
@@ -508,7 +573,9 @@ fn test_auto_increment_filename() {
     fs::write(&input_vtt, SIMPLE_VTT).expect("Failed to write VTT file");
     
     // First conversion: creates meeting.md
-    let output = Command::new(get_vtt_to_md_path())
+    let vtt_to_md = get_vtt_to_md_path();
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(&input_vtt)
         .output()
         .expect("Failed to execute vtt-to-md");
@@ -519,7 +586,8 @@ fn test_auto_increment_filename() {
     assert!(first_output.exists(), "meeting.md should exist");
     
     // Second conversion: should create meeting (1).md
-    let output = Command::new(get_vtt_to_md_path())
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(&input_vtt)
         .output()
         .expect("Failed to execute vtt-to-md");
@@ -530,7 +598,8 @@ fn test_auto_increment_filename() {
     assert!(second_output.exists(), "meeting (1).md should exist");
     
     // Third conversion: should create meeting (2).md
-    let output = Command::new(get_vtt_to_md_path())
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(&input_vtt)
         .output()
         .expect("Failed to execute vtt-to-md");
@@ -554,7 +623,9 @@ fn test_no_auto_increment_flag() {
     fs::write(&input_vtt, SIMPLE_VTT).expect("Failed to write VTT file");
     
     // First conversion: creates meeting.md
-    let output = Command::new(get_vtt_to_md_path())
+    let vtt_to_md = get_vtt_to_md_path();
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(&input_vtt)
         .output()
         .expect("Failed to execute vtt-to-md");
@@ -563,7 +634,8 @@ fn test_no_auto_increment_flag() {
     assert!(output_md.exists());
     
     // Second conversion with --no-auto-increment should fail
-    let output = Command::new(get_vtt_to_md_path())
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg("--no-auto-increment")
         .arg(&input_vtt)
         .output()
@@ -574,7 +646,8 @@ fn test_no_auto_increment_flag() {
     assert!(stderr.contains("already exists") || stderr.contains("OutputExists"));
     
     // Should succeed with --force
-    let output = Command::new(get_vtt_to_md_path())
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg("--no-auto-increment")
         .arg("--force")
         .arg(&input_vtt)
@@ -597,11 +670,149 @@ fn test_explicit_output_skips_auto_increment() {
     fs::write(&explicit_output, "existing content").expect("Failed to write existing file");
     
     // Conversion with explicit output should fail (auto-increment only applies to derived paths)
-    let output = Command::new(get_vtt_to_md_path())
+    let vtt_to_md = get_vtt_to_md_path();
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
         .arg(&input_vtt)
         .arg(&explicit_output)
         .output()
         .expect("Failed to execute vtt-to-md");
-    
+
     assert!(!output.status.success(), "Should fail when explicit output exists");
+}
+
+#[cfg(target_os = "windows")]
+mod include_timestamps_defaults_windows {
+    use super::{create_test_vtt, new_test_command, write_test_config};
+    use super::get_vtt_to_md_path;
+    use tempfile::TempDir;
+
+    #[test]
+    fn env_var_default_is_used_when_flag_omitted() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_path = create_test_vtt(
+            &temp_dir,
+            "test.vtt",
+            "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v Alice>Hello</v>\n",
+        );
+
+        let vtt_to_md = get_vtt_to_md_path();
+        let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+        let output = cmd
+            .arg(input_path.to_str().unwrap())
+            .arg("--stdout")
+            .env("VTT_TO_MD_INCLUDE_TIMESTAMPS", "first")
+            .output()
+            .expect("Failed to execute vtt-to-md");
+
+        assert!(output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("[00:00:00.000]"));
+    }
+
+    #[test]
+    fn config_default_is_used_when_no_env_and_flag_omitted() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_path = create_test_vtt(
+            &temp_dir,
+            "test.vtt",
+            "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v Alice>Hello</v>\n",
+        );
+
+        let vtt_to_md = get_vtt_to_md_path();
+        let (mut cmd, config_root) = new_test_command(&vtt_to_md);
+        write_test_config(&config_root, "include_timestamps = \"each\"\n");
+
+        let output = cmd
+            .arg(input_path.to_str().unwrap())
+            .arg("--stdout")
+            .output()
+            .expect("Failed to execute vtt-to-md");
+
+        assert!(output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("[00:00:00.000]"));
+    }
+
+    #[test]
+    fn cli_overrides_env_var_default() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_path = create_test_vtt(
+            &temp_dir,
+            "test.vtt",
+            "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v Alice>Hello</v>\n",
+        );
+
+        let vtt_to_md = get_vtt_to_md_path();
+        let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+        let output = cmd
+            .arg(input_path.to_str().unwrap())
+            .arg("--include-timestamps")
+            .arg("none")
+            .arg("--stdout")
+            .env("VTT_TO_MD_INCLUDE_TIMESTAMPS", "first")
+            .output()
+            .expect("Failed to execute vtt-to-md");
+
+        assert!(output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(!stdout.contains("[00:00:00.000]"));
+    }
+
+    #[test]
+    fn invalid_env_var_falls_back_to_config_with_warning() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_path = create_test_vtt(
+            &temp_dir,
+            "test.vtt",
+            "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v Alice>Hello</v>\n",
+        );
+
+        let vtt_to_md = get_vtt_to_md_path();
+        let (mut cmd, config_root) = new_test_command(&vtt_to_md);
+        write_test_config(&config_root, "include_timestamps = \"each\"\n");
+
+        let output = cmd
+            .arg(input_path.to_str().unwrap())
+            .arg("--stdout")
+            .env("VTT_TO_MD_INCLUDE_TIMESTAMPS", "bogus")
+            .output()
+            .expect("Failed to execute vtt-to-md");
+
+        assert!(output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("[00:00:00.000]"));
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("Warning:"));
+        assert!(stderr.contains("VTT_TO_MD_INCLUDE_TIMESTAMPS"));
+    }
+
+    #[test]
+    fn invalid_config_falls_back_to_built_in_default_with_warning() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_path = create_test_vtt(
+            &temp_dir,
+            "test.vtt",
+            "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v Alice>Hello</v>\n",
+        );
+
+        let vtt_to_md = get_vtt_to_md_path();
+        let (mut cmd, config_root) = new_test_command(&vtt_to_md);
+        write_test_config(&config_root, "include_timestamps = \"bogus\"\n");
+
+        let output = cmd
+            .arg(input_path.to_str().unwrap())
+            .arg("--stdout")
+            .output()
+            .expect("Failed to execute vtt-to-md");
+
+        assert!(output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(!stdout.contains("[00:00:00.000]"));
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("Warning:"));
+        assert!(stderr.contains("config.toml"));
+    }
 }

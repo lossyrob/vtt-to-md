@@ -6,6 +6,7 @@
 use crate::error::VttError;
 use clap::{Parser, ValueEnum};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 /// VTT to Markdown converter - Convert WebVTT transcript files to readable Markdown
 #[derive(Parser, Debug)]
@@ -84,10 +85,9 @@ pub struct Args {
     #[arg(
         long,
         value_name = "MODE",
-        default_value = "none",
         help = "Timestamp inclusion mode: none, first (first cue of each speaker turn), or each (every cue)"
     )]
-    pub include_timestamps: TimestampMode,
+    pub include_timestamps: Option<TimestampMode>,
 }
 
 /// Timestamp inclusion mode for output
@@ -99,6 +99,49 @@ pub enum TimestampMode {
     First,
     /// Include timestamp for each original cue
     Each,
+}
+
+impl FromStr for TimestampMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let value = s.trim();
+        if value.eq_ignore_ascii_case("none") {
+            Ok(Self::None)
+        } else if value.eq_ignore_ascii_case("first") {
+            Ok(Self::First)
+        } else if value.eq_ignore_ascii_case("each") {
+            Ok(Self::Each)
+        } else {
+            Err(format!(
+                "invalid include_timestamps value '{value}' (expected one of: none, first, each)"
+            ))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TimestampMode;
+    use std::str::FromStr;
+
+    #[test]
+    fn timestamp_mode_from_str_accepts_valid_values_case_insensitive() {
+        assert_eq!(TimestampMode::from_str("none").unwrap(), TimestampMode::None);
+        assert_eq!(TimestampMode::from_str("first").unwrap(), TimestampMode::First);
+        assert_eq!(TimestampMode::from_str("each").unwrap(), TimestampMode::Each);
+
+        assert_eq!(TimestampMode::from_str("NoNe").unwrap(), TimestampMode::None);
+        assert_eq!(TimestampMode::from_str(" FIRST ").unwrap(), TimestampMode::First);
+        assert_eq!(TimestampMode::from_str("EaCh").unwrap(), TimestampMode::Each);
+    }
+
+    #[test]
+    fn timestamp_mode_from_str_rejects_invalid_values() {
+        assert!(TimestampMode::from_str("").is_err());
+        assert!(TimestampMode::from_str("bogus").is_err());
+        assert!(TimestampMode::from_str("none-ish").is_err());
+    }
 }
 
 impl Args {

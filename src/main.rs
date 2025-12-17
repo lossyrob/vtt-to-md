@@ -1,13 +1,14 @@
 //! VTT to Markdown converter - command-line tool for converting WebVTT transcripts to readable Markdown.
 
 mod cli;
+mod config;
 mod consolidator;
 mod error;
 mod markdown;
 mod parser;
 
 use clap::Parser;
-use cli::Args;
+use cli::{Args, TimestampMode};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -26,8 +27,23 @@ fn main() -> ExitCode {
         return e.exit_code();
     }
 
+    // Resolve effective timestamp mode (CLI > env > config > built-in default)
+    let (configured_default, warnings) = if args.include_timestamps.is_some() {
+        (None, Vec::new())
+    } else {
+        config::resolve_default_timestamp_mode()
+    };
+
+    for warning in warnings {
+        eprintln!("Warning: {warning}");
+    }
+
+    let effective_timestamp_mode = args
+        .include_timestamps
+        .unwrap_or(configured_default.unwrap_or(TimestampMode::None));
+
     // Run the conversion
-    if let Err(e) = run_conversion(&args) {
+    if let Err(e) = run_conversion(&args, effective_timestamp_mode) {
         eprintln!("Error: {}", e);
         return e.exit_code();
     }
@@ -36,7 +52,7 @@ fn main() -> ExitCode {
 }
 
 /// Run the VTT to Markdown conversion pipeline.
-fn run_conversion(args: &Args) -> Result<(), error::VttError> {
+fn run_conversion(args: &Args, timestamp_mode: TimestampMode) -> Result<(), error::VttError> {
     // Parse the VTT file
     let vtt_document = parser::VttDocument::parse(&args.input)?;
 
@@ -61,11 +77,11 @@ fn run_conversion(args: &Args) -> Result<(), error::VttError> {
     let segments = consolidator::consolidate_cues(
         &cues,
         &args.unknown_speaker,
-        args.include_timestamps,
+        timestamp_mode,
     );
 
     // Format as Markdown
-    let markdown_content = markdown::format_markdown(&segments, args.include_timestamps);
+    let markdown_content = markdown::format_markdown(&segments, timestamp_mode);
 
     // Write output (either to file or stdout)
     if args.stdout {

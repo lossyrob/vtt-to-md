@@ -115,11 +115,18 @@ Create a focused configuration module and adjust CLI parsing so the program can 
 ### Success Criteria
 
 #### Automated Verification
-- [ ] `cargo test` passes.
-- [ ] CLI still accepts `--include-timestamps first|each|none`.
+- [x] `cargo test` passes.
+- [x] CLI still accepts `--include-timestamps first|each|none`.
 
 #### Manual Verification
 - [ ] `vtt-to-md input.vtt --help` still clearly documents timestamp modes.
+
+**Status:** Completed.
+
+**Notes:**
+- `--include-timestamps` is now optional (no clap default) so “flag omitted” can be distinguished from `--include-timestamps none`.
+- Added shared parsing via `TimestampMode::from_str` and unit tests.
+- Added config/env resolver in `src/config.rs`.
 
 ---
 
@@ -162,12 +169,18 @@ Compute an “effective” timestamp mode once per run using precedence rules an
 ### Success Criteria
 
 #### Automated Verification
-- [ ] `cargo test` passes.
-- [ ] Existing integration tests for `--include-timestamps first|each` still pass unchanged.
+- [x] `cargo test` passes.
+- [x] Existing integration tests for `--include-timestamps first|each` still pass unchanged.
 
 #### Manual Verification
 - [ ] With `VTT_TO_MD_INCLUDE_TIMESTAMPS=first`, running `vtt-to-md input.vtt --stdout` includes timestamps.
 - [ ] With env set to `first`, running `vtt-to-md input.vtt --include-timestamps none --stdout` produces output without timestamps.
+
+**Status:** Completed.
+
+**Notes:**
+- Precedence implemented as `CLI > env > config > built-in default (none)`.
+- Non-fatal configuration problems emit `Warning:` to stderr once.
 
 ---
 
@@ -214,10 +227,15 @@ Add integration test coverage for env/config precedence and for graceful fallbac
 ### Success Criteria
 
 #### Automated Verification
-- [ ] `cargo test` passes on Windows.
+- [x] `cargo test` passes on Windows.
 
 #### Manual Verification
 - [ ] Double-click / file association run (or equivalent “no flags” invocation) picks up a configured default.
+
+**Status:** Completed.
+
+**Notes:**
+- Integration tests isolate user env/config and add Windows-only coverage for env/config precedence and invalid values.
 
 ---
 
