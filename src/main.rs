@@ -30,13 +30,13 @@ fn main() -> ExitCode {
     // Resolve effective include_timestamps (CLI > env > config > built-in default)
     let mut warnings = Vec::new();
 
-    if let Some(setting) = args.include_timestamps {
-        if setting.is_legacy {
-            warnings.push(
-                "--include-timestamps uses legacy value (none|first|each); please migrate to true/false or omit the value"
-                    .to_string(),
-            );
-        }
+    if let Some(setting) = args.include_timestamps
+        && setting.is_legacy
+    {
+        warnings.push(
+            "--include-timestamps uses legacy value (none|first|each); please migrate to true/false or omit the value"
+                .to_string(),
+        );
     }
 
     let (configured_default, config_warnings) = if args.include_timestamps.is_some() {
@@ -73,8 +73,8 @@ fn run_conversion(args: &Args, include_timestamps: bool) -> Result<(), error::Vt
     // Determine if we should filter unknown speakers:
     // - Explicitly enabled with --filter-unknown
     // - OR auto-enabled for Teams format (has voice tags) unless disabled with --no-filter-unknown
-    let should_filter = args.filter_unknown 
-        || (vtt_document.has_voice_tags && !args.no_filter_unknown);
+    let should_filter =
+        args.filter_unknown || (vtt_document.has_voice_tags && !args.no_filter_unknown);
 
     // Filter cues if requested or auto-detected
     let cues = if should_filter {

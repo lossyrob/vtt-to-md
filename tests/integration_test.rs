@@ -61,20 +61,17 @@ fn new_test_command(vtt_to_md: &PathBuf) -> (Command, TempDir) {
 fn test_config_file_path(config_root: &TempDir) -> PathBuf {
     #[cfg(target_os = "macos")]
     {
-        return config_root
+        config_root
             .path()
             .join("Library")
             .join("Application Support")
             .join("vtt-to-md")
-            .join("config.toml");
+            .join("config.toml")
     }
 
     #[cfg(not(target_os = "macos"))]
     {
-        return config_root
-            .path()
-            .join("vtt-to-md")
-            .join("config.toml");
+        config_root.path().join("vtt-to-md").join("config.toml")
     }
 }
 
@@ -482,10 +479,13 @@ truly brings up entire sample app life,</v>\n\
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    
+
     // The key test: all three parts should be consolidated into one paragraph
     // and the text should include ALL content from all three cues
-    assert!(stdout.contains("**Speaker1:**"), "Speaker should be present");
+    assert!(
+        stdout.contains("**Speaker1:**"),
+        "Speaker should be present"
+    );
     assert!(
         stdout.contains("But imagine for the user experience being"),
         "Multi-line content from first cue should be preserved"
@@ -498,8 +498,11 @@ truly brings up entire sample app life,</v>\n\
         stdout.contains("truly brings up entire sample app life"),
         "Multi-line content from second cue should be preserved"
     );
-    assert!(stdout.contains("right?"), "Content from third cue should be present");
-    
+    assert!(
+        stdout.contains("right?"),
+        "Content from third cue should be present"
+    );
+
     // Verify it's all in one paragraph (no extra ** for same speaker)
     let speaker_count = stdout.matches("**Speaker1:**").count();
     assert_eq!(
@@ -530,7 +533,7 @@ Yeah.\n\
     let input_path = create_test_vtt(&temp_dir, "test.vtt", vtt_content);
 
     let vtt_to_md = get_vtt_to_md_path();
-    
+
     // Test without flags - Teams format auto-detected, so Unknown speakers should be filtered
     let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
     let output = cmd
@@ -541,9 +544,15 @@ Yeah.\n\
 
     assert!(output.status.success(), "Command failed without flags");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(!stdout.contains("**Unknown:**"), "Teams format auto-filters Unknown speakers");
-    assert!(!stdout.contains("Umm."), "Should not contain unknown cue text");
-    
+    assert!(
+        !stdout.contains("**Unknown:**"),
+        "Teams format auto-filters Unknown speakers"
+    );
+    assert!(
+        !stdout.contains("Umm."),
+        "Should not contain unknown cue text"
+    );
+
     // Test with --no-filter-unknown - should include Unknown speakers
     let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
     let output = cmd
@@ -559,10 +568,13 @@ Yeah.\n\
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("**Unknown:**"), "Should contain Unknown speaker when not filtered");
+    assert!(
+        stdout.contains("**Unknown:**"),
+        "Should contain Unknown speaker when not filtered"
+    );
     assert!(stdout.contains("Umm."), "Should contain unknown cue text");
     assert!(stdout.contains("Yeah."), "Should contain unknown cue text");
-    
+
     // Test with explicit --filter-unknown flag - should also exclude Unknown speakers
     let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
     let output = cmd
@@ -578,23 +590,38 @@ Yeah.\n\
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(!stdout.contains("**Unknown:**"), "Should not contain Unknown speaker");
-    assert!(!stdout.contains("Umm."), "Should not contain unknown cue text");
-    assert!(!stdout.contains("Yeah."), "Should not contain unknown cue text");
-    
+    assert!(
+        !stdout.contains("**Unknown:**"),
+        "Should not contain Unknown speaker"
+    );
+    assert!(
+        !stdout.contains("Umm."),
+        "Should not contain unknown cue text"
+    );
+    assert!(
+        !stdout.contains("Yeah."),
+        "Should not contain unknown cue text"
+    );
+
     // Verify Alice and Bob are still present and consolidated (in filtered output)
-    assert!(stdout.contains("**Alice:** Hello world How are you?"), "Alice's cues should be consolidated");
-    assert!(stdout.contains("**Bob:** I'm fine, thanks!"), "Bob should be present");
+    assert!(
+        stdout.contains("**Alice:** Hello world How are you?"),
+        "Alice's cues should be consolidated"
+    );
+    assert!(
+        stdout.contains("**Bob:** I'm fine, thanks!"),
+        "Bob should be present"
+    );
 }
 
 #[test]
 fn test_auto_increment_filename() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let input_vtt = temp_dir.path().join("meeting.vtt");
-    
+
     // Create a simple VTT file
     fs::write(&input_vtt, SIMPLE_VTT).expect("Failed to write VTT file");
-    
+
     // First conversion: creates meeting.md
     let vtt_to_md = get_vtt_to_md_path();
     let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
@@ -602,36 +629,36 @@ fn test_auto_increment_filename() {
         .arg(&input_vtt)
         .output()
         .expect("Failed to execute vtt-to-md");
-    
+
     assert!(output.status.success(), "First conversion failed");
-    
+
     let first_output = temp_dir.path().join("meeting.md");
     assert!(first_output.exists(), "meeting.md should exist");
-    
+
     // Second conversion: should create meeting (1).md
     let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
     let output = cmd
         .arg(&input_vtt)
         .output()
         .expect("Failed to execute vtt-to-md");
-    
+
     assert!(output.status.success(), "Second conversion failed");
-    
+
     let second_output = temp_dir.path().join("meeting (1).md");
     assert!(second_output.exists(), "meeting (1).md should exist");
-    
+
     // Third conversion: should create meeting (2).md
     let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
     let output = cmd
         .arg(&input_vtt)
         .output()
         .expect("Failed to execute vtt-to-md");
-    
+
     assert!(output.status.success(), "Third conversion failed");
-    
+
     let third_output = temp_dir.path().join("meeting (2).md");
     assert!(third_output.exists(), "meeting (2).md should exist");
-    
+
     // Verify all three files exist and are different
     assert!(first_output.exists() && second_output.exists() && third_output.exists());
 }
@@ -641,10 +668,10 @@ fn test_no_auto_increment_flag() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let input_vtt = temp_dir.path().join("meeting.vtt");
     let output_md = temp_dir.path().join("meeting.md");
-    
+
     // Create a simple VTT file
     fs::write(&input_vtt, SIMPLE_VTT).expect("Failed to write VTT file");
-    
+
     // First conversion: creates meeting.md
     let vtt_to_md = get_vtt_to_md_path();
     let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
@@ -652,10 +679,10 @@ fn test_no_auto_increment_flag() {
         .arg(&input_vtt)
         .output()
         .expect("Failed to execute vtt-to-md");
-    
+
     assert!(output.status.success());
     assert!(output_md.exists());
-    
+
     // Second conversion with --no-auto-increment should fail
     let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
     let output = cmd
@@ -663,11 +690,11 @@ fn test_no_auto_increment_flag() {
         .arg(&input_vtt)
         .output()
         .expect("Failed to execute vtt-to-md");
-    
+
     assert!(!output.status.success(), "Should fail when output exists");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("already exists") || stderr.contains("OutputExists"));
-    
+
     // Should succeed with --force
     let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
     let output = cmd
@@ -676,7 +703,7 @@ fn test_no_auto_increment_flag() {
         .arg(&input_vtt)
         .output()
         .expect("Failed to execute vtt-to-md");
-    
+
     assert!(output.status.success(), "Should succeed with --force flag");
 }
 
@@ -685,13 +712,13 @@ fn test_explicit_output_skips_auto_increment() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let input_vtt = temp_dir.path().join("meeting.vtt");
     let explicit_output = temp_dir.path().join("custom.md");
-    
+
     // Create a simple VTT file
     fs::write(&input_vtt, SIMPLE_VTT).expect("Failed to write VTT file");
-    
+
     // Create existing file at explicit output location
     fs::write(&explicit_output, "existing content").expect("Failed to write existing file");
-    
+
     // Conversion with explicit output should fail (auto-increment only applies to derived paths)
     let vtt_to_md = get_vtt_to_md_path();
     let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
@@ -701,13 +728,16 @@ fn test_explicit_output_skips_auto_increment() {
         .output()
         .expect("Failed to execute vtt-to-md");
 
-    assert!(!output.status.success(), "Should fail when explicit output exists");
+    assert!(
+        !output.status.success(),
+        "Should fail when explicit output exists"
+    );
 }
 
 #[cfg(target_os = "windows")]
 mod include_timestamps_defaults_windows {
-    use super::{create_test_vtt, new_test_command, write_test_config};
     use super::get_vtt_to_md_path;
+    use super::{create_test_vtt, new_test_command, write_test_config};
     use tempfile::TempDir;
 
     #[test]

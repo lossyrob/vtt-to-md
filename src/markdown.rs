@@ -42,14 +42,12 @@ pub fn format_markdown(segments: &[SpeakerSegment], include_timestamps: bool) ->
     let mut result = String::new();
 
     for segment in segments {
-        if include_timestamps {
-            if let Some(ref timestamp) = segment.timestamp {
-                result.push_str(&format!(
-                    "[{}] **{}:** {}\n\n",
-                    timestamp, segment.speaker, segment.text
-                ));
-                continue;
-            }
+        if include_timestamps && let Some(ref timestamp) = segment.timestamp {
+            result.push_str(&format!(
+                "[{}] **{}:** {}\n\n",
+                timestamp, segment.speaker, segment.text
+            ));
+            continue;
         }
 
         result.push_str(&format!("**{}:** {}\n\n", segment.speaker, segment.text));

@@ -107,7 +107,9 @@ fn config_file_path() -> Option<PathBuf> {
     base_dir.map(|dir| dir.join(APP_DIR_NAME).join(CONFIG_FILE_NAME))
 }
 
-fn parse_config_include_timestamps(contents: &str) -> Result<(Option<bool>, Option<String>), String> {
+fn parse_config_include_timestamps(
+    contents: &str,
+) -> Result<(Option<bool>, Option<String>), String> {
     let value: toml::Value = contents
         .parse()
         .map_err(|err| format!("TOML parse error: {err}"))?;
@@ -147,7 +149,10 @@ mod tests {
     #[test]
     fn parse_config_include_timestamps_missing_key_returns_none() {
         let contents = "other = 'x'\n";
-        assert_eq!(parse_config_include_timestamps(contents).unwrap(), (None, None));
+        assert_eq!(
+            parse_config_include_timestamps(contents).unwrap(),
+            (None, None)
+        );
     }
 
     #[test]

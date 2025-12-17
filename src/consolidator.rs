@@ -9,7 +9,7 @@
 //! ```rust,ignore
 //! use vtt_to_md::consolidator::consolidate_cues;
 //! use vtt_to_md::parser::Cue;
-//! 
+//!
 //!
 //! let cues = vec![
 //!     Cue { speaker: Some("Alice".to_string()), text: "Hello.".to_string(), timestamp: Some("00:00:01.000".to_string()) },
@@ -416,10 +416,7 @@ mod tests {
 
         // Test text ending with comma (should join with space)
         assert_eq!(
-            join_texts(&[
-                "Hello,".to_string(),
-                "how are you?".to_string(),
-            ]),
+            join_texts(&["Hello,".to_string(), "how are you?".to_string(),]),
             "Hello, how are you?"
         );
     }

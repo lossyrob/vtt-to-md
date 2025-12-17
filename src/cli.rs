@@ -149,73 +149,6 @@ impl FromStr for IncludeTimestampsSetting {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::IncludeTimestampsSetting;
-    use std::str::FromStr;
-
-    #[test]
-    fn include_timestamps_setting_from_str_accepts_booleans_and_legacy_values() {
-        assert_eq!(
-            IncludeTimestampsSetting::from_str("true").unwrap(),
-            IncludeTimestampsSetting {
-                value: true,
-                is_legacy: false
-            }
-        );
-        assert_eq!(
-            IncludeTimestampsSetting::from_str(" false ").unwrap(),
-            IncludeTimestampsSetting {
-                value: false,
-                is_legacy: false
-            }
-        );
-        assert_eq!(
-            IncludeTimestampsSetting::from_str("ON").unwrap(),
-            IncludeTimestampsSetting {
-                value: true,
-                is_legacy: false
-            }
-        );
-        assert_eq!(
-            IncludeTimestampsSetting::from_str("0").unwrap(),
-            IncludeTimestampsSetting {
-                value: false,
-                is_legacy: false
-            }
-        );
-
-        assert_eq!(
-            IncludeTimestampsSetting::from_str("none").unwrap(),
-            IncludeTimestampsSetting {
-                value: false,
-                is_legacy: true
-            }
-        );
-        assert_eq!(
-            IncludeTimestampsSetting::from_str("FIRST").unwrap(),
-            IncludeTimestampsSetting {
-                value: true,
-                is_legacy: true
-            }
-        );
-        assert_eq!(
-            IncludeTimestampsSetting::from_str(" EaCh ").unwrap(),
-            IncludeTimestampsSetting {
-                value: true,
-                is_legacy: true
-            }
-        );
-    }
-
-    #[test]
-    fn include_timestamps_setting_from_str_rejects_invalid_values() {
-        assert!(IncludeTimestampsSetting::from_str("").is_err());
-        assert!(IncludeTimestampsSetting::from_str("bogus").is_err());
-        assert!(IncludeTimestampsSetting::from_str("none-ish").is_err());
-    }
-}
-
 impl Args {
     /// Validate arguments and derive output path if not specified.
     ///
@@ -315,5 +248,72 @@ fn paths_equal(path1: &Path, path2: &Path) -> bool {
             // Fall back to direct comparison if canonicalization fails
             path1 == path2
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IncludeTimestampsSetting;
+    use std::str::FromStr;
+
+    #[test]
+    fn include_timestamps_setting_from_str_accepts_booleans_and_legacy_values() {
+        assert_eq!(
+            IncludeTimestampsSetting::from_str("true").unwrap(),
+            IncludeTimestampsSetting {
+                value: true,
+                is_legacy: false
+            }
+        );
+        assert_eq!(
+            IncludeTimestampsSetting::from_str(" false ").unwrap(),
+            IncludeTimestampsSetting {
+                value: false,
+                is_legacy: false
+            }
+        );
+        assert_eq!(
+            IncludeTimestampsSetting::from_str("ON").unwrap(),
+            IncludeTimestampsSetting {
+                value: true,
+                is_legacy: false
+            }
+        );
+        assert_eq!(
+            IncludeTimestampsSetting::from_str("0").unwrap(),
+            IncludeTimestampsSetting {
+                value: false,
+                is_legacy: false
+            }
+        );
+
+        assert_eq!(
+            IncludeTimestampsSetting::from_str("none").unwrap(),
+            IncludeTimestampsSetting {
+                value: false,
+                is_legacy: true
+            }
+        );
+        assert_eq!(
+            IncludeTimestampsSetting::from_str("FIRST").unwrap(),
+            IncludeTimestampsSetting {
+                value: true,
+                is_legacy: true
+            }
+        );
+        assert_eq!(
+            IncludeTimestampsSetting::from_str(" EaCh ").unwrap(),
+            IncludeTimestampsSetting {
+                value: true,
+                is_legacy: true
+            }
+        );
+    }
+
+    #[test]
+    fn include_timestamps_setting_from_str_rejects_invalid_values() {
+        assert!(IncludeTimestampsSetting::from_str("").is_err());
+        assert!(IncludeTimestampsSetting::from_str("bogus").is_err());
+        assert!(IncludeTimestampsSetting::from_str("none-ish").is_err());
     }
 }
