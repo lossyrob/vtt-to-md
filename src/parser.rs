@@ -92,7 +92,10 @@ impl VttDocument {
         // Parse cues from the remaining lines
         let (cues, has_voice_tags) = parse_cues(lines)?;
 
-        Ok(VttDocument { cues, has_voice_tags })
+        Ok(VttDocument {
+            cues,
+            has_voice_tags,
+        })
     }
 }
 
@@ -173,13 +176,11 @@ where
 
     // Sort cues by timestamp to handle out-of-order cues in VTT files
     // (some formats like Teams can have interleaved cues)
-    cues.sort_by(|a, b| {
-        match (&a.timestamp, &b.timestamp) {
-            (Some(ts_a), Some(ts_b)) => ts_a.cmp(ts_b),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => std::cmp::Ordering::Equal,
-        }
+    cues.sort_by(|a, b| match (&a.timestamp, &b.timestamp) {
+        (Some(ts_a), Some(ts_b)) => ts_a.cmp(ts_b),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
     });
 
     Ok((cues, has_voice_tags))

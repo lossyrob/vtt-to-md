@@ -4,8 +4,9 @@
 //! validates argument combinations, and provides helpful error messages and usage text.
 
 use crate::error::VttError;
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 /// VTT to Markdown converter - Convert WebVTT transcript files to readable Markdown
 #[derive(Parser, Debug)]
@@ -80,25 +81,72 @@ pub struct Args {
     )]
     pub no_auto_increment: bool,
 
-    /// Timestamp inclusion mode
+    /// Include timestamps (one per consolidated speaker turn)
     #[arg(
         long,
-        value_name = "MODE",
-        default_value = "none",
-        help = "Timestamp inclusion mode: none, first (first cue of each speaker turn), or each (every cue)"
+        value_name = "BOOL",
+        num_args = 0..=1,
+        default_missing_value = "true",
+        help = "Include timestamps in output (one per consolidated speaker turn).\n\
+                Use --include-timestamps or --include-timestamps=false.\n\
+                Legacy values (none|first|each) are accepted with a deprecation warning."
     )]
-    pub include_timestamps: TimestampMode,
+    pub include_timestamps: Option<IncludeTimestampsSetting>,
 }
 
-/// Timestamp inclusion mode for output
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum TimestampMode {
-    /// Don't include timestamps in output
-    None,
-    /// Include timestamp from first cue of each speaker turn
-    First,
-    /// Include timestamp for each original cue
-    Each,
+/// Parsed value for timestamp inclusion.
+///
+/// This is a boolean setting, but we accept legacy values (`none|first|each`) for backward
+/// compatibility and surface them as `is_legacy=true` so callers can emit deprecation warnings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IncludeTimestampsSetting {
+    pub value: bool,
+    pub is_legacy: bool,
+}
+
+impl IncludeTimestampsSetting {
+    fn parse_bool(value: &str) -> Option<bool> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "true" | "1" | "yes" | "y" | "on" => Some(true),
+            "false" | "0" | "no" | "n" | "off" => Some(false),
+            _ => None,
+        }
+    }
+}
+
+impl FromStr for IncludeTimestampsSetting {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            return Err("include_timestamps value is empty".to_string());
+        }
+
+        if let Some(value) = Self::parse_bool(trimmed) {
+            return Ok(Self {
+                value,
+                is_legacy: false,
+            });
+        }
+
+        if trimmed.eq_ignore_ascii_case("none") {
+            return Ok(Self {
+                value: false,
+                is_legacy: true,
+            });
+        }
+        if trimmed.eq_ignore_ascii_case("first") || trimmed.eq_ignore_ascii_case("each") {
+            return Ok(Self {
+                value: true,
+                is_legacy: true,
+            });
+        }
+
+        Err(format!(
+            "invalid include_timestamps value '{trimmed}' (expected a boolean like true/false, or legacy none/first/each)"
+        ))
+    }
 }
 
 impl Args {
@@ -200,5 +248,72 @@ fn paths_equal(path1: &Path, path2: &Path) -> bool {
             // Fall back to direct comparison if canonicalization fails
             path1 == path2
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IncludeTimestampsSetting;
+    use std::str::FromStr;
+
+    #[test]
+    fn include_timestamps_setting_from_str_accepts_booleans_and_legacy_values() {
+        assert_eq!(
+            IncludeTimestampsSetting::from_str("true").unwrap(),
+            IncludeTimestampsSetting {
+                value: true,
+                is_legacy: false
+            }
+        );
+        assert_eq!(
+            IncludeTimestampsSetting::from_str(" false ").unwrap(),
+            IncludeTimestampsSetting {
+                value: false,
+                is_legacy: false
+            }
+        );
+        assert_eq!(
+            IncludeTimestampsSetting::from_str("ON").unwrap(),
+            IncludeTimestampsSetting {
+                value: true,
+                is_legacy: false
+            }
+        );
+        assert_eq!(
+            IncludeTimestampsSetting::from_str("0").unwrap(),
+            IncludeTimestampsSetting {
+                value: false,
+                is_legacy: false
+            }
+        );
+
+        assert_eq!(
+            IncludeTimestampsSetting::from_str("none").unwrap(),
+            IncludeTimestampsSetting {
+                value: false,
+                is_legacy: true
+            }
+        );
+        assert_eq!(
+            IncludeTimestampsSetting::from_str("FIRST").unwrap(),
+            IncludeTimestampsSetting {
+                value: true,
+                is_legacy: true
+            }
+        );
+        assert_eq!(
+            IncludeTimestampsSetting::from_str(" EaCh ").unwrap(),
+            IncludeTimestampsSetting {
+                value: true,
+                is_legacy: true
+            }
+        );
+    }
+
+    #[test]
+    fn include_timestamps_setting_from_str_rejects_invalid_values() {
+        assert!(IncludeTimestampsSetting::from_str("").is_err());
+        assert!(IncludeTimestampsSetting::from_str("bogus").is_err());
+        assert!(IncludeTimestampsSetting::from_str("none-ish").is_err());
     }
 }

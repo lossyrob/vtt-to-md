@@ -163,22 +163,27 @@ This document outlines manual testing procedures for the vtt-to-md CLI tool to e
 - [ ] Run: `vtt-to-md test.vtt --unknown-speaker "Narrator" --stdout`
 - [ ] Verify output uses "Narrator" instead of "Unknown"
 
-### --include-timestamps none (default)
+### --include-timestamps (default: disabled)
 
 - [ ] Run: `vtt-to-md test.vtt --stdout`
 - [ ] Verify no timestamps appear in output
 
-### --include-timestamps first
+### --include-timestamps (enable)
 
-- [ ] Run: `vtt-to-md test.vtt --include-timestamps first --stdout`
-- [ ] Verify timestamp appears before first cue of each speaker turn
+- [ ] Run: `vtt-to-md test.vtt --include-timestamps --stdout`
+- [ ] Verify timestamp appears before each consolidated speaker turn
 - [ ] Format: `[HH:MM:SS.mmm] **Speaker:** text`
 
-### --include-timestamps each
+### --include-timestamps=false (disable)
 
-- [ ] Run: `vtt-to-md test.vtt --include-timestamps each --stdout`
-- [ ] Verify timestamp appears for each original cue
-- [ ] Multiple timestamps for same speaker if consecutive cues
+- [ ] Run: `vtt-to-md test.vtt --include-timestamps=false --stdout`
+- [ ] Verify no timestamps appear in output
+
+### Legacy values (deprecated)
+
+- [ ] Run: `vtt-to-md test.vtt --include-timestamps first --stdout`
+- [ ] Verify timestamps appear
+- [ ] Verify a deprecation warning is printed to stderr
 
 ### --help Flag
 

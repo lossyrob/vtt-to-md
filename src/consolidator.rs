@@ -9,7 +9,7 @@
 //! ```rust,ignore
 //! use vtt_to_md::consolidator::consolidate_cues;
 //! use vtt_to_md::parser::Cue;
-//! use vtt_to_md::cli::TimestampMode;
+//!
 //!
 //! let cues = vec![
 //!     Cue { speaker: Some("Alice".to_string()), text: "Hello.".to_string(), timestamp: Some("00:00:01.000".to_string()) },
@@ -17,13 +17,12 @@
 //!     Cue { speaker: Some("Bob".to_string()), text: "I'm fine!".to_string(), timestamp: Some("00:00:03.000".to_string()) },
 //! ];
 //!
-//! let segments = consolidate_cues(&cues, "Unknown", TimestampMode::None);
+//! let segments = consolidate_cues(&cues, "Unknown", false);
 //! // Result: 2 segments - Alice's text consolidated, Bob separate
 //! assert_eq!(segments.len(), 2);
 //! assert_eq!(segments[0].text, "Hello. How are you?");
 //! ```
 
-use crate::cli::TimestampMode;
 use crate::parser::Cue;
 
 /// Represents a consolidated speaker segment with speaker name, text, and optional timestamps.
@@ -33,12 +32,8 @@ pub struct SpeakerSegment {
     pub speaker: String,
     /// The consolidated text from all consecutive cues by this speaker
     pub text: String,
-    /// Optional timestamp for the segment (used by TimestampMode::First)
+    /// Optional timestamp for the segment (first cue timestamp in this speaker turn)
     pub timestamp: Option<String>,
-    /// Vector of all timestamps from original cues (used by TimestampMode::Each)
-    /// When TimestampMode::Each is used, the markdown formatter uses the first timestamp
-    /// to indicate when the speaker turn began.
-    pub timestamps: Vec<String>,
 }
 
 /// Consolidate a list of parsed cues into speaker segments.
@@ -50,7 +45,7 @@ pub struct SpeakerSegment {
 ///
 /// * `cues` - The list of parsed cues from a VTT document
 /// * `unknown_speaker_label` - The label to use for cues without speaker attribution
-/// * `timestamp_mode` - How to include timestamps in the output (None, First, or Each)
+/// * `include_timestamps` - Whether to include timestamps (first per consolidated speaker turn)
 ///
 /// # Returns
 ///
@@ -64,18 +59,17 @@ pub struct SpeakerSegment {
 ///     Cue { speaker: Some("Alice".to_string()), text: "How are you?".to_string(), timestamp: Some("00:00:02.000".to_string()) },
 ///     Cue { speaker: Some("Bob".to_string()), text: "I'm fine.".to_string(), timestamp: Some("00:00:03.000".to_string()) },
 /// ];
-/// let segments = consolidate_cues(&cues, "Unknown", TimestampMode::First);
+/// let segments = consolidate_cues(&cues, "Unknown", true);
 /// assert_eq!(segments.len(), 2); // Alice and Bob
 /// ```
 pub fn consolidate_cues(
     cues: &[Cue],
     unknown_speaker_label: &str,
-    timestamp_mode: TimestampMode,
+    include_timestamps: bool,
 ) -> Vec<SpeakerSegment> {
     let mut segments = Vec::new();
     let mut current_speaker: Option<String> = None;
     let mut current_texts = Vec::new();
-    let mut current_timestamps = Vec::new();
     let mut first_timestamp: Option<String> = None;
 
     for cue in cues {
@@ -97,22 +91,20 @@ pub fn consolidate_cues(
             // Save the previous segment if it exists
             if let Some(prev_speaker) = current_speaker.take() {
                 let consolidated_text = join_texts(&current_texts);
-                let segment_timestamp = match timestamp_mode {
-                    TimestampMode::None => None,
-                    TimestampMode::First => first_timestamp.clone(),
-                    TimestampMode::Each => None, // Timestamps stored in timestamps vec
+                let segment_timestamp = if include_timestamps {
+                    first_timestamp.clone()
+                } else {
+                    None
                 };
 
                 segments.push(SpeakerSegment {
                     speaker: prev_speaker,
                     text: consolidated_text,
                     timestamp: segment_timestamp,
-                    timestamps: current_timestamps.clone(),
                 });
 
                 // Clear accumulators
                 current_texts.clear();
-                current_timestamps.clear();
             }
 
             // Start new segment
@@ -122,25 +114,21 @@ pub fn consolidate_cues(
 
         // Add current cue to the segment
         current_texts.push(cue.text.clone());
-        if let Some(ts) = &cue.timestamp {
-            current_timestamps.push(ts.clone());
-        }
     }
 
     // Save the final segment
     if let Some(speaker) = current_speaker {
         let consolidated_text = join_texts(&current_texts);
-        let segment_timestamp = match timestamp_mode {
-            TimestampMode::None => None,
-            TimestampMode::First => first_timestamp,
-            TimestampMode::Each => None, // Timestamps stored in timestamps vec
+        let segment_timestamp = if include_timestamps {
+            first_timestamp
+        } else {
+            None
         };
 
         segments.push(SpeakerSegment {
             speaker,
             text: consolidated_text,
             timestamp: segment_timestamp,
-            timestamps: current_timestamps,
         });
     }
 
@@ -205,7 +193,7 @@ mod tests {
             },
         ];
 
-        let segments = consolidate_cues(&cues, "Unknown", TimestampMode::None);
+        let segments = consolidate_cues(&cues, "Unknown", false);
 
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].speaker, "Alice");
@@ -241,7 +229,7 @@ mod tests {
             },
         ];
 
-        let segments = consolidate_cues(&cues, "Unknown", TimestampMode::None);
+        let segments = consolidate_cues(&cues, "Unknown", false);
 
         assert_eq!(segments.len(), 4);
         assert_eq!(segments[0].speaker, "Alice");
@@ -269,7 +257,7 @@ mod tests {
             },
         ];
 
-        let segments = consolidate_cues(&cues, "Narrator", TimestampMode::None);
+        let segments = consolidate_cues(&cues, "Narrator", false);
 
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].speaker, "Narrator");
@@ -296,7 +284,7 @@ mod tests {
             },
         ];
 
-        let segments = consolidate_cues(&cues, "Unknown", TimestampMode::None);
+        let segments = consolidate_cues(&cues, "Unknown", false);
 
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].speaker, "Alice");
@@ -324,7 +312,7 @@ mod tests {
             },
         ];
 
-        let segments = consolidate_cues(&cues, "Unknown", TimestampMode::None);
+        let segments = consolidate_cues(&cues, "Unknown", false);
 
         assert_eq!(segments.len(), 1);
         // Sentences should be joined with single spaces
@@ -335,21 +323,21 @@ mod tests {
     }
 
     #[test]
-    fn test_consolidate_timestamp_mode_none() {
+    fn test_consolidate_include_timestamps_false() {
         let cues = vec![Cue {
             speaker: Some("Alice".to_string()),
             text: "Hello.".to_string(),
             timestamp: Some("00:00:01.000".to_string()),
         }];
 
-        let segments = consolidate_cues(&cues, "Unknown", TimestampMode::None);
+        let segments = consolidate_cues(&cues, "Unknown", false);
 
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].timestamp, None);
     }
 
     #[test]
-    fn test_consolidate_timestamp_mode_first() {
+    fn test_consolidate_include_timestamps_true_stores_first_timestamp_per_turn() {
         let cues = vec![
             Cue {
                 speaker: Some("Alice".to_string()),
@@ -368,44 +356,13 @@ mod tests {
             },
         ];
 
-        let segments = consolidate_cues(&cues, "Unknown", TimestampMode::First);
+        let segments = consolidate_cues(&cues, "Unknown", true);
 
         assert_eq!(segments.len(), 2);
         // First segment should have timestamp from first Alice cue
         assert_eq!(segments[0].timestamp, Some("00:00:01.000".to_string()));
         // Second segment should have timestamp from Bob's cue
         assert_eq!(segments[1].timestamp, Some("00:00:03.000".to_string()));
-    }
-
-    #[test]
-    fn test_consolidate_timestamp_mode_each() {
-        let cues = vec![
-            Cue {
-                speaker: Some("Alice".to_string()),
-                text: "Hello.".to_string(),
-                timestamp: Some("00:00:01.000".to_string()),
-            },
-            Cue {
-                speaker: Some("Alice".to_string()),
-                text: "How are you?".to_string(),
-                timestamp: Some("00:00:02.000".to_string()),
-            },
-            Cue {
-                speaker: Some("Alice".to_string()),
-                text: "I hope you're well.".to_string(),
-                timestamp: Some("00:00:03.000".to_string()),
-            },
-        ];
-
-        let segments = consolidate_cues(&cues, "Unknown", TimestampMode::Each);
-
-        assert_eq!(segments.len(), 1);
-        // In Each mode, timestamp field is None, but timestamps vec contains all
-        assert_eq!(segments[0].timestamp, None);
-        assert_eq!(segments[0].timestamps.len(), 3);
-        assert_eq!(segments[0].timestamps[0], "00:00:01.000");
-        assert_eq!(segments[0].timestamps[1], "00:00:02.000");
-        assert_eq!(segments[0].timestamps[2], "00:00:03.000");
     }
 
     #[test]
@@ -459,10 +416,7 @@ mod tests {
 
         // Test text ending with comma (should join with space)
         assert_eq!(
-            join_texts(&[
-                "Hello,".to_string(),
-                "how are you?".to_string(),
-            ]),
+            join_texts(&["Hello,".to_string(), "how are you?".to_string(),]),
             "Hello, how are you?"
         );
     }

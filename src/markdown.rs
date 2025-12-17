@@ -4,7 +4,6 @@
 //! (bold speaker names followed by text) and writing the output to files or stdout.
 //! It includes safeguards for file overwriting and proper permission handling.
 
-use crate::cli::TimestampMode;
 use crate::consolidator::SpeakerSegment;
 use crate::error::VttError;
 use std::fs;
@@ -20,7 +19,7 @@ use std::path::Path;
 /// # Arguments
 ///
 /// * `segments` - The consolidated speaker segments to format
-/// * `timestamp_mode` - How to include timestamps (None, First, or Each)
+/// * `include_timestamps` - Whether to include timestamps (first per consolidated speaker turn)
 ///
 /// # Returns
 ///
@@ -34,46 +33,24 @@ use std::path::Path;
 ///         speaker: "Alice".to_string(),
 ///         text: "Hello world.".to_string(),
 ///         timestamp: None,
-///         timestamps: vec![],
 ///     },
 /// ];
-/// let markdown = format_markdown(&segments, TimestampMode::None);
+/// let markdown = format_markdown(&segments, false);
 /// // Result: "**Alice:** Hello world.\n\n"
 /// ```
-pub fn format_markdown(segments: &[SpeakerSegment], timestamp_mode: TimestampMode) -> String {
+pub fn format_markdown(segments: &[SpeakerSegment], include_timestamps: bool) -> String {
     let mut result = String::new();
 
     for segment in segments {
-        match timestamp_mode {
-            TimestampMode::None => {
-                result.push_str(&format!("**{}:** {}\n\n", segment.speaker, segment.text));
-            }
-            TimestampMode::First => {
-                if let Some(ref timestamp) = segment.timestamp {
-                    result.push_str(&format!(
-                        "[{}] **{}:** {}\n\n",
-                        timestamp, segment.speaker, segment.text
-                    ));
-                } else {
-                    result.push_str(&format!("**{}:** {}\n\n", segment.speaker, segment.text));
-                }
-            }
-            TimestampMode::Each => {
-                // TimestampMode::Each displays the first timestamp for each speaker segment
-                // with the full consolidated text. This is a simplified implementation that
-                // shows when the speaker turn began rather than splitting text by original
-                // cue boundaries (which are lost during consolidation).
-                // This aligns with the consolidator's text joining strategy.
-                if !segment.timestamps.is_empty() {
-                    result.push_str(&format!(
-                        "[{}] **{}:** {}\n\n",
-                        segment.timestamps[0], segment.speaker, segment.text
-                    ));
-                } else {
-                    result.push_str(&format!("**{}:** {}\n\n", segment.speaker, segment.text));
-                }
-            }
+        if include_timestamps && let Some(ref timestamp) = segment.timestamp {
+            result.push_str(&format!(
+                "[{}] **{}:** {}\n\n",
+                timestamp, segment.speaker, segment.text
+            ));
+            continue;
         }
+
+        result.push_str(&format!("**{}:** {}\n\n", segment.speaker, segment.text));
     }
 
     result
@@ -169,17 +146,15 @@ mod tests {
                 speaker: "Alice".to_string(),
                 text: "Hello world.".to_string(),
                 timestamp: None,
-                timestamps: vec![],
             },
             SpeakerSegment {
                 speaker: "Bob".to_string(),
                 text: "Hi Alice!".to_string(),
                 timestamp: None,
-                timestamps: vec![],
             },
         ];
 
-        let markdown = format_markdown(&segments, TimestampMode::None);
+        let markdown = format_markdown(&segments, false);
 
         assert_eq!(
             markdown,
@@ -188,23 +163,21 @@ mod tests {
     }
 
     #[test]
-    fn test_format_markdown_first_timestamp() {
+    fn test_format_markdown_with_timestamps() {
         let segments = vec![
             SpeakerSegment {
                 speaker: "Alice".to_string(),
                 text: "Hello world.".to_string(),
                 timestamp: Some("00:00:01.000".to_string()),
-                timestamps: vec![],
             },
             SpeakerSegment {
                 speaker: "Bob".to_string(),
                 text: "Hi Alice!".to_string(),
                 timestamp: Some("00:00:05.000".to_string()),
-                timestamps: vec![],
             },
         ];
 
-        let markdown = format_markdown(&segments, TimestampMode::First);
+        let markdown = format_markdown(&segments, true);
 
         assert_eq!(
             markdown,
@@ -213,21 +186,15 @@ mod tests {
     }
 
     #[test]
-    fn test_format_markdown_each_timestamp() {
+    fn test_format_markdown_with_timestamps_missing_timestamp_does_not_prefix() {
         let segments = vec![SpeakerSegment {
             speaker: "Alice".to_string(),
-            text: "Hello world. How are you?".to_string(),
+            text: "Hello world.".to_string(),
             timestamp: None,
-            timestamps: vec!["00:00:01.000".to_string(), "00:00:02.000".to_string()],
         }];
 
-        let markdown = format_markdown(&segments, TimestampMode::Each);
-
-        // For now, Each mode shows first timestamp with full text
-        assert_eq!(
-            markdown,
-            "[00:00:01.000] **Alice:** Hello world. How are you?\n\n"
-        );
+        let markdown = format_markdown(&segments, true);
+        assert_eq!(markdown, "**Alice:** Hello world.\n\n");
     }
 
     #[test]

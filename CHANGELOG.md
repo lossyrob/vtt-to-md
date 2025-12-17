@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auto-increment filename collision handling (creates file.md, file (1).md, file (2).md, etc.)
 - GitHub Actions release workflow triggered by version tags
 - --no-auto-increment flag for backwards compatibility with old overwrite behavior
+- Optional per-user default for timestamp inclusion when `--include-timestamps` is omitted (precedence: CLI > env `VTT_TO_MD_INCLUDE_TIMESTAMPS` > per-user config > built-in default)
+
+### Changed
+- `--include-timestamps` is now a boolean-friendly option: `--include-timestamps` / `--include-timestamps=false`
+- Env/config prefer booleans (`true|false`) while accepting legacy `none|first|each` with deprecation warnings
 
 ## [0.1.0] - 2025-11-18
 
