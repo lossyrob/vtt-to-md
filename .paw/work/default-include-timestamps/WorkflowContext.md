@@ -2,7 +2,7 @@
 
 Work Title: Default Include Timestamps
 Feature Slug: default-include-timestamps
-Target Branch: auto
+Target Branch: feature/16-include-timestamps-default-association
 Workflow Mode: full
 Review Strategy: local
 Handoff Mode: semi-auto
