@@ -8,7 +8,7 @@ mod markdown;
 mod parser;
 
 use clap::Parser;
-use cli::{Args, TimestampMode};
+use cli::Args;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -27,23 +27,37 @@ fn main() -> ExitCode {
         return e.exit_code();
     }
 
-    // Resolve effective timestamp mode (CLI > env > config > built-in default)
-    let (configured_default, warnings) = if args.include_timestamps.is_some() {
+    // Resolve effective include_timestamps (CLI > env > config > built-in default)
+    let mut warnings = Vec::new();
+
+    if let Some(setting) = args.include_timestamps {
+        if setting.is_legacy {
+            warnings.push(
+                "--include-timestamps uses legacy value (none|first|each); please migrate to true/false or omit the value"
+                    .to_string(),
+            );
+        }
+    }
+
+    let (configured_default, config_warnings) = if args.include_timestamps.is_some() {
         (None, Vec::new())
     } else {
-        config::resolve_default_timestamp_mode()
+        config::resolve_default_include_timestamps()
     };
+
+    warnings.extend(config_warnings);
 
     for warning in warnings {
         eprintln!("Warning: {warning}");
     }
 
-    let effective_timestamp_mode = args
+    let effective_include_timestamps = args
         .include_timestamps
-        .unwrap_or(configured_default.unwrap_or(TimestampMode::None));
+        .map(|setting| setting.value)
+        .unwrap_or(configured_default.unwrap_or(false));
 
     // Run the conversion
-    if let Err(e) = run_conversion(&args, effective_timestamp_mode) {
+    if let Err(e) = run_conversion(&args, effective_include_timestamps) {
         eprintln!("Error: {}", e);
         return e.exit_code();
     }
@@ -52,7 +66,7 @@ fn main() -> ExitCode {
 }
 
 /// Run the VTT to Markdown conversion pipeline.
-fn run_conversion(args: &Args, timestamp_mode: TimestampMode) -> Result<(), error::VttError> {
+fn run_conversion(args: &Args, include_timestamps: bool) -> Result<(), error::VttError> {
     // Parse the VTT file
     let vtt_document = parser::VttDocument::parse(&args.input)?;
 
@@ -74,14 +88,10 @@ fn run_conversion(args: &Args, timestamp_mode: TimestampMode) -> Result<(), erro
     };
 
     // Consolidate speaker segments
-    let segments = consolidator::consolidate_cues(
-        &cues,
-        &args.unknown_speaker,
-        timestamp_mode,
-    );
+    let segments = consolidator::consolidate_cues(&cues, &args.unknown_speaker, include_timestamps);
 
     // Format as Markdown
-    let markdown_content = markdown::format_markdown(&segments, timestamp_mode);
+    let markdown_content = markdown::format_markdown(&segments, include_timestamps);
 
     // Write output (either to file or stdout)
     if args.stdout {

@@ -8,34 +8,39 @@ The built-in default remains `none` for users who do not configure anything.
 
 ## Behavior
 
-### Supported timestamp modes
+### Timestamp inclusion (boolean)
 
-`vtt-to-md` supports three timestamp inclusion modes:
+`vtt-to-md` supports a single timestamp inclusion setting:
 
-- `none`: do not include timestamps in Markdown output
-- `first`: include the first timestamp per speaker turn
-- `each`: include cue timestamps (currently prints the first timestamp of the turn due to consolidation)
+- `include_timestamps = false`: do not include timestamps in Markdown output
+- `include_timestamps = true`: include the first timestamp per consolidated speaker turn
+
+Note: due to cue consolidation, timestamps are per speaker turn (the first cue in that turn).
 
 ### Resolution and precedence
 
-When `--include-timestamps <MODE>` is explicitly provided, that value is always used.
+When `--include-timestamps[=<BOOL>]` is explicitly provided, that value is always used.
 
 When `--include-timestamps` is omitted, `vtt-to-md` resolves an effective mode using the following precedence (highest → lowest):
 
 1. CLI flag (`--include-timestamps <MODE>`)
 2. Environment variable (`VTT_TO_MD_INCLUDE_TIMESTAMPS`)
 3. Per-user config file (`config.toml`)
-4. Built-in default (`none`)
+4. Built-in default (`false`)
 
 ## Configuration
 
 ### Environment variable
 
-Set `VTT_TO_MD_INCLUDE_TIMESTAMPS` to one of:
+Preferred values for `VTT_TO_MD_INCLUDE_TIMESTAMPS`:
 
-- `none`
-- `first`
-- `each`
+- `true`
+- `false`
+
+Legacy values are still accepted for a transition period (with a deprecation warning):
+
+- `none` (equivalent to `false`)
+- `first` / `each` (equivalent to `true`)
 
 Examples:
 
@@ -57,7 +62,13 @@ Locations:
 Supported key:
 
 ```toml
-include_timestamps = "none"  # or "first" or "each"
+include_timestamps = true
+```
+
+Legacy string values (deprecated) are still accepted:
+
+```toml
+include_timestamps = "first"  # or "each" or "none"
 ```
 
 ## Warning and fallback behavior
@@ -74,7 +85,7 @@ Warnings are emitted as `Warning: ...` on stderr.
 
 ### Example: Configure a default (no CLI flag)
 
-With `VTT_TO_MD_INCLUDE_TIMESTAMPS=first` (or `include_timestamps = "first"` in config), running:
+With `VTT_TO_MD_INCLUDE_TIMESTAMPS=true` (or `include_timestamps = true` in config), running:
 
 ```bash
 vtt-to-md meeting.vtt
@@ -83,7 +94,7 @@ vtt-to-md meeting.vtt
 will behave the same as:
 
 ```bash
-vtt-to-md meeting.vtt --include-timestamps first
+vtt-to-md meeting.vtt --include-timestamps
 ```
 
 ### Example: CLI always overrides defaults
@@ -91,7 +102,7 @@ vtt-to-md meeting.vtt --include-timestamps first
 Even if you have a default configured, you can explicitly disable timestamps for a single run:
 
 ```bash
-vtt-to-md meeting.vtt --include-timestamps none
+vtt-to-md meeting.vtt --include-timestamps=false
 ```
 
 ## Testing guide

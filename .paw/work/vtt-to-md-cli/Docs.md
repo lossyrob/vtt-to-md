@@ -117,9 +117,9 @@ vtt-to-md teams-meeting.vtt
 vtt-to-md teams-meeting.vtt --no-filter-unknown
 ```
 
-**Include timestamps** (first timestamp per speaker turn):
+**Include timestamps** (one per consolidated speaker turn):
 ```bash
-vtt-to-md meeting.vtt --include-timestamps first
+vtt-to-md meeting.vtt --include-timestamps
 ```
 
 **Output to stdout** for piping:
@@ -154,17 +154,18 @@ The tool accepts the following command-line options:
 
 **Options:**
 - `--unknown-speaker <LABEL>`: Custom label for cues without speaker attribution (default: "Unknown")
-- `--include-timestamps <MODE>`: Timestamp inclusion mode—`none` (no timestamps), `first` (first cue of each speaker turn), or `each` (cue timestamps; currently shows the first timestamp per turn due to consolidation)
+- `--include-timestamps[=<BOOL>]`: Include timestamps (one per consolidated speaker turn). Use `--include-timestamps` or `--include-timestamps=false`. Legacy values (`none|first|each`) are accepted with a deprecation warning.
 
 #### Default Timestamp Mode (Optional)
 
 If you omit `--include-timestamps`, `vtt-to-md` can apply a per-user default timestamp mode.
 
-Precedence (highest → lowest): **CLI flag > environment variable > config file > built-in default (`none`)**.
+Precedence (highest → lowest): **CLI flag > environment variable > config file > built-in default (`false`)**.
 
 **Environment variable**
 
-- `VTT_TO_MD_INCLUDE_TIMESTAMPS=none|first|each`
+- Preferred: `VTT_TO_MD_INCLUDE_TIMESTAMPS=true|false`
+- Legacy: `none|first|each` (accepted with a deprecation warning)
 
 **Per-user config file**
 
@@ -177,7 +178,7 @@ Create `config.toml` at the platform config location:
 Example:
 
 ```toml
-include_timestamps = "first"
+include_timestamps = true
 ```
 
 **Invalid/unreadable values**
@@ -345,9 +346,9 @@ This searches the converted Markdown for "action item" without creating a file.
 
 The VTT format doesn't support multiple speakers within a single cue in standard usage. If a VTT file somehow contains mid-cue speaker changes, the tool will only recognize the first speaker for that cue.
 
-**Timestamp Mode "Each" Behavior**
+**Timestamp Behavior**
 
-When using `--include-timestamps each`, the tool currently shows the first timestamp with the full consolidated text for each speaker turn. A more sophisticated approach might split the text by timestamp, but this would complicate the consolidation logic and is not necessary for the primary use case.
+When timestamps are enabled, the tool prints the first timestamp of each consolidated speaker turn. This is a deliberate consequence of cue consolidation (original cue boundaries are not preserved).
 
 **File Association Configuration**
 
@@ -473,9 +474,9 @@ and this is line three</v>
 
 **Timestamp Test**
 
-1. Run with `--include-timestamps first`:
+1. Run with `--include-timestamps`:
 ```bash
-vtt-to-md test.vtt --include-timestamps first
+vtt-to-md test.vtt --include-timestamps
 ```
 
 2. Verify timestamps appear at the beginning of each speaker turn: `[HH:MM:SS.mmm] **Speaker:**`

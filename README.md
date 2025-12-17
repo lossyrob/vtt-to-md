@@ -8,7 +8,7 @@ A Rust command-line tool for converting VTT (WebVTT) transcript files from meeti
 - **Multi-line Voice Tag Support**: Properly handles VTT files with text spanning multiple lines within voice tags
 - **Timestamp Sorting**: Automatically sorts out-of-order cues by timestamp (common in Teams transcripts)
 - **Smart Unknown Speaker Filtering**: Automatically filters out cues without speaker attribution for Teams-style VTT files (those with `<v>` tags). Can be disabled with `--no-filter-unknown`
-- **Flexible Timestamp Modes**: Include no timestamps, first timestamp per speaker turn, or all timestamps
+- **Timestamps (Optional)**: Include a timestamp per consolidated speaker turn
 - **Custom Speaker Labels**: Customize the label for cues without speaker attribution
 - **Safe by Default**: Won't overwrite existing files without explicit `--force` flag
 - **Cross-platform**: Runs on Windows, Linux, and macOS with no runtime dependencies
@@ -42,7 +42,7 @@ vtt-to-md input.vtt
 
 With options:
 ```bash
-vtt-to-md input.vtt output.md --filter-unknown --include-timestamps first
+vtt-to-md input.vtt output.md --filter-unknown --include-timestamps
 ```
 
 ### Command-Line Options
@@ -56,10 +56,10 @@ vtt-to-md input.vtt output.md --filter-unknown --include-timestamps first
 - `--unknown-speaker LABEL` - Custom label for cues without speaker attribution (default: "Unknown")
 - `--filter-unknown` - Explicitly filter out cues without speaker attribution (auto-enabled for Teams-style VTT)
 - `--no-filter-unknown` - Disable automatic filtering for Teams-style VTT files
-- `--include-timestamps MODE` - Timestamp inclusion mode:
-	- `none`: do not include timestamps
-	- `first`: include the first timestamp per speaker turn (the first cue in the consolidated turn)
-	- `each`: include cue timestamps (currently prints the first timestamp of the turn due to consolidation)
+- `--include-timestamps[=<BOOL>]` - Include timestamps in output (one per consolidated speaker turn).
+	- Enable: `--include-timestamps` (or `--include-timestamps=true`)
+	- Disable: `--include-timestamps=false`
+	- Legacy values (`none|first|each`) are accepted with a deprecation warning.
 - `--help`, `-h` - Display help text
 - `--version`, `-V` - Display version
 
@@ -69,11 +69,12 @@ vtt-to-md input.vtt output.md --filter-unknown --include-timestamps first
 
 If you omit `--include-timestamps`, `vtt-to-md` can still include timestamps by using an optional per-user default.
 
-Precedence (highest → lowest): **CLI flag > environment variable > config file > built-in default (`none`)**.
+Precedence (highest → lowest): **CLI flag > environment variable > config file > built-in default (`false`)**.
 
 **Environment variable**
 
-- `VTT_TO_MD_INCLUDE_TIMESTAMPS=none|first|each`
+- Preferred: `VTT_TO_MD_INCLUDE_TIMESTAMPS=true|false`
+- Legacy: `none|first|each` (accepted with a deprecation warning)
 
 **Per-user config file**
 
@@ -86,7 +87,7 @@ Create `config.toml` at the standard per-user config location:
 Example `config.toml`:
 
 ```toml
-include_timestamps = "first"
+include_timestamps = true
 ```
 
 **Invalid/unreadable values**
@@ -105,14 +106,14 @@ Keep Unknown speakers for Teams transcript:
 vtt-to-md "teams-meeting.vtt" --no-filter-unknown
 ```
 
-Include first timestamp per speaker turn:
+Include timestamps per speaker turn:
 ```bash
-vtt-to-md "meeting.vtt" --include-timestamps first
+vtt-to-md "meeting.vtt" --include-timestamps
 ```
 
-Include cue timestamps (see note above about consolidation):
+Explicitly disable timestamps:
 ```bash
-vtt-to-md "meeting.vtt" --include-timestamps each
+vtt-to-md "meeting.vtt" --include-timestamps=false
 ```
 
 Output to stdout with custom unknown speaker label:

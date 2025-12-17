@@ -3,12 +3,12 @@
 //! This module supports an opt-in, user-level default for timestamp inclusion.
 //!
 //! Supported sources (highest to lowest precedence):
-//! 1. Environment variable `VTT_TO_MD_INCLUDE_TIMESTAMPS=none|first|each`
-//! 2. Per-user config file `vtt-to-md/config.toml` with `include_timestamps = "none"|"first"|"each"`
+//! 1. Environment variable `VTT_TO_MD_INCLUDE_TIMESTAMPS=true|false` (legacy `none|first|each` accepted)
+//! 2. Per-user config file `vtt-to-md/config.toml` with `include_timestamps = true|false` (legacy string values accepted)
 //!
-//! The built-in default remains `none` when no configured default is present.
+//! The built-in default remains `false` when no configured default is present.
 
-use crate::cli::TimestampMode;
+use crate::cli::IncludeTimestampsSetting;
 use std::fs;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -18,15 +18,15 @@ const APP_DIR_NAME: &str = "vtt-to-md";
 const CONFIG_FILE_NAME: &str = "config.toml";
 const CONFIG_KEY_INCLUDE_TIMESTAMPS: &str = "include_timestamps";
 
-/// Resolve a configured default timestamp mode (env var > config file).
+/// Resolve a configured default `include_timestamps` setting (env var > config file).
 ///
 /// This is only intended to be used when the CLI flag `--include-timestamps` was
 /// omitted, so that explicit CLI usage always wins.
 ///
 /// Returns a tuple of:
-/// - `Option<TimestampMode>`: the configured default, if any
+/// - `Option<bool>`: the configured default, if any
 /// - `Vec<String>`: warnings suitable for printing to stderr
-pub(crate) fn resolve_default_timestamp_mode() -> (Option<TimestampMode>, Vec<String>) {
+pub(crate) fn resolve_default_include_timestamps() -> (Option<bool>, Vec<String>) {
     let mut warnings = Vec::new();
 
     // 1) Environment variable (highest non-CLI precedence)
@@ -37,8 +37,15 @@ pub(crate) fn resolve_default_timestamp_mode() -> (Option<TimestampMode>, Vec<St
                 "{ENV_INCLUDE_TIMESTAMPS} is set but empty; ignoring"
             ));
         } else {
-            match TimestampMode::from_str(value) {
-                Ok(mode) => return (Some(mode), warnings),
+            match IncludeTimestampsSetting::from_str(value) {
+                Ok(setting) => {
+                    if setting.is_legacy {
+                        warnings.push(format!(
+                            "{ENV_INCLUDE_TIMESTAMPS} uses legacy value '{value}'; please migrate to true/false"
+                        ));
+                    }
+                    return (Some(setting.value), warnings);
+                }
                 Err(err) => warnings.push(format!(
                     "invalid {ENV_INCLUDE_TIMESTAMPS}='{value}': {err}; ignoring",
                 )),
@@ -67,7 +74,12 @@ pub(crate) fn resolve_default_timestamp_mode() -> (Option<TimestampMode>, Vec<St
     };
 
     match parse_config_include_timestamps(&contents) {
-        Ok(mode) => (mode, warnings),
+        Ok((value, legacy_warning)) => {
+            if let Some(warning) = legacy_warning {
+                warnings.push(warning);
+            }
+            (value, warnings)
+        }
         Err(err) => {
             warnings.push(format!(
                 "invalid config file '{}': {err}; ignoring",
@@ -95,45 +107,64 @@ fn config_file_path() -> Option<PathBuf> {
     base_dir.map(|dir| dir.join(APP_DIR_NAME).join(CONFIG_FILE_NAME))
 }
 
-fn parse_config_include_timestamps(contents: &str) -> Result<Option<TimestampMode>, String> {
+fn parse_config_include_timestamps(contents: &str) -> Result<(Option<bool>, Option<String>), String> {
     let value: toml::Value = contents
         .parse()
         .map_err(|err| format!("TOML parse error: {err}"))?;
 
     let Some(include_value) = value.get(CONFIG_KEY_INCLUDE_TIMESTAMPS) else {
-        return Ok(None);
+        return Ok((None, None));
     };
+
+    if let Some(include_bool) = include_value.as_bool() {
+        return Ok((Some(include_bool), None));
+    }
 
     let Some(include_str) = include_value.as_str() else {
         return Err(format!(
-            "'{CONFIG_KEY_INCLUDE_TIMESTAMPS}' must be a string"
+            "'{CONFIG_KEY_INCLUDE_TIMESTAMPS}' must be a boolean or string"
         ));
     };
 
-    let parsed = TimestampMode::from_str(include_str)
+    let parsed = IncludeTimestampsSetting::from_str(include_str)
         .map_err(|err| format!("invalid {CONFIG_KEY_INCLUDE_TIMESTAMPS}='{include_str}': {err}"))?;
 
-    Ok(Some(parsed))
+    let legacy_warning = if parsed.is_legacy {
+        Some(format!(
+            "config include_timestamps uses legacy value '{include_str}'; please migrate to true/false"
+        ))
+    } else {
+        None
+    };
+
+    Ok((Some(parsed.value), legacy_warning))
 }
 
 #[cfg(test)]
 mod tests {
     use super::parse_config_include_timestamps;
-    use crate::cli::TimestampMode;
 
     #[test]
     fn parse_config_include_timestamps_missing_key_returns_none() {
         let contents = "other = 'x'\n";
-        assert_eq!(parse_config_include_timestamps(contents).unwrap(), None);
+        assert_eq!(parse_config_include_timestamps(contents).unwrap(), (None, None));
     }
 
     #[test]
-    fn parse_config_include_timestamps_accepts_valid_values() {
-        let contents = "include_timestamps = \"first\"\n";
+    fn parse_config_include_timestamps_accepts_boolean_values() {
+        let contents = "include_timestamps = true\n";
         assert_eq!(
             parse_config_include_timestamps(contents).unwrap(),
-            Some(TimestampMode::First)
+            (Some(true), None)
         );
+    }
+
+    #[test]
+    fn parse_config_include_timestamps_accepts_legacy_string_values_with_warning() {
+        let contents = "include_timestamps = \"each\"\n";
+        let (value, warning) = parse_config_include_timestamps(contents).unwrap();
+        assert_eq!(value, Some(true));
+        assert!(warning.is_some());
     }
 
     #[test]
@@ -143,8 +174,8 @@ mod tests {
     }
 
     #[test]
-    fn parse_config_include_timestamps_rejects_non_string() {
-        let contents = "include_timestamps = 1\n";
+    fn parse_config_include_timestamps_rejects_non_bool_non_string() {
+        let contents = "include_timestamps = 123\n";
         assert!(parse_config_include_timestamps(contents).is_err());
     }
 }

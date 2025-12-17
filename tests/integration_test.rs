@@ -224,9 +224,58 @@ fn test_unknown_speaker_flag() {
 }
 
 #[test]
-fn test_include_timestamps_first() {
+fn test_include_timestamps_flag_enables_timestamps() {
     let temp_dir = TempDir::new().unwrap();
     let vtt_content = "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v Alice>Hello</v>\n\n00:00:02.000 --> 00:00:04.000\n<v Alice>World</v>\n";
+    let input_path = create_test_vtt(&temp_dir, "test.vtt", vtt_content);
+
+    let vtt_to_md = get_vtt_to_md_path();
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
+        .arg(input_path.to_str().unwrap())
+        .arg("--include-timestamps")
+        .arg("--stdout")
+        .output()
+        .expect("Failed to execute vtt-to-md");
+
+    assert!(
+        output.status.success(),
+        "Command failed with --include-timestamps"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("[00:00:00.000]"));
+    assert!(stdout.contains("**Alice:**"));
+}
+
+#[test]
+fn test_include_timestamps_explicit_false_disables_timestamps() {
+    let temp_dir = TempDir::new().unwrap();
+    let vtt_content = "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v Alice>Hello</v>\n\n00:00:02.000 --> 00:00:04.000\n<v Alice>World</v>\n";
+    let input_path = create_test_vtt(&temp_dir, "test.vtt", vtt_content);
+
+    let vtt_to_md = get_vtt_to_md_path();
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
+        .arg(input_path.to_str().unwrap())
+        .arg("--include-timestamps=false")
+        .arg("--stdout")
+        .output()
+        .expect("Failed to execute vtt-to-md");
+
+    assert!(
+        output.status.success(),
+        "Command failed with --include-timestamps=false"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("[00:00:00.000]"));
+}
+
+#[test]
+fn test_include_timestamps_legacy_cli_value_is_accepted_with_warning() {
+    let temp_dir = TempDir::new().unwrap();
+    let vtt_content = "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v Alice>Hello</v>\n";
     let input_path = create_test_vtt(&temp_dir, "test.vtt", vtt_content);
 
     let vtt_to_md = get_vtt_to_md_path();
@@ -239,40 +288,14 @@ fn test_include_timestamps_first() {
         .output()
         .expect("Failed to execute vtt-to-md");
 
-    assert!(
-        output.status.success(),
-        "Command failed with --include-timestamps first"
-    );
+    assert!(output.status.success());
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("[00:00:00.000]"));
-    assert!(stdout.contains("**Alice:**"));
-}
 
-#[test]
-fn test_include_timestamps_each() {
-    let temp_dir = TempDir::new().unwrap();
-    let vtt_content = "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v Alice>Hello</v>\n\n00:00:02.000 --> 00:00:04.000\n<v Alice>World</v>\n";
-    let input_path = create_test_vtt(&temp_dir, "test.vtt", vtt_content);
-
-    let vtt_to_md = get_vtt_to_md_path();
-    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
-    let output = cmd
-        .arg(input_path.to_str().unwrap())
-        .arg("--include-timestamps")
-        .arg("each")
-        .arg("--stdout")
-        .output()
-        .expect("Failed to execute vtt-to-md");
-
-    assert!(
-        output.status.success(),
-        "Command failed with --include-timestamps each"
-    );
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("[00:00:00.000]"));
-    assert!(stdout.contains("**Alice:**"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Warning:"));
+    assert!(stderr.contains("legacy"));
 }
 
 #[test]
@@ -701,7 +724,7 @@ mod include_timestamps_defaults_windows {
         let output = cmd
             .arg(input_path.to_str().unwrap())
             .arg("--stdout")
-            .env("VTT_TO_MD_INCLUDE_TIMESTAMPS", "first")
+            .env("VTT_TO_MD_INCLUDE_TIMESTAMPS", "true")
             .output()
             .expect("Failed to execute vtt-to-md");
 
@@ -721,7 +744,7 @@ mod include_timestamps_defaults_windows {
 
         let vtt_to_md = get_vtt_to_md_path();
         let (mut cmd, config_root) = new_test_command(&vtt_to_md);
-        write_test_config(&config_root, "include_timestamps = \"each\"\n");
+        write_test_config(&config_root, "include_timestamps = true\n");
 
         let output = cmd
             .arg(input_path.to_str().unwrap())
@@ -747,10 +770,9 @@ mod include_timestamps_defaults_windows {
         let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
         let output = cmd
             .arg(input_path.to_str().unwrap())
-            .arg("--include-timestamps")
-            .arg("none")
+            .arg("--include-timestamps=false")
             .arg("--stdout")
-            .env("VTT_TO_MD_INCLUDE_TIMESTAMPS", "first")
+            .env("VTT_TO_MD_INCLUDE_TIMESTAMPS", "true")
             .output()
             .expect("Failed to execute vtt-to-md");
 
@@ -770,7 +792,7 @@ mod include_timestamps_defaults_windows {
 
         let vtt_to_md = get_vtt_to_md_path();
         let (mut cmd, config_root) = new_test_command(&vtt_to_md);
-        write_test_config(&config_root, "include_timestamps = \"each\"\n");
+        write_test_config(&config_root, "include_timestamps = true\n");
 
         let output = cmd
             .arg(input_path.to_str().unwrap())
@@ -814,5 +836,60 @@ mod include_timestamps_defaults_windows {
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stderr.contains("Warning:"));
         assert!(stderr.contains("config.toml"));
+    }
+
+    #[test]
+    fn legacy_env_value_is_accepted_with_deprecation_warning() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_path = create_test_vtt(
+            &temp_dir,
+            "test.vtt",
+            "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v Alice>Hello</v>\n",
+        );
+
+        let vtt_to_md = get_vtt_to_md_path();
+        let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+        let output = cmd
+            .arg(input_path.to_str().unwrap())
+            .arg("--stdout")
+            .env("VTT_TO_MD_INCLUDE_TIMESTAMPS", "first")
+            .output()
+            .expect("Failed to execute vtt-to-md");
+
+        assert!(output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("[00:00:00.000]"));
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("Warning:"));
+        assert!(stderr.contains("legacy"));
+    }
+
+    #[test]
+    fn legacy_config_value_is_accepted_with_deprecation_warning() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_path = create_test_vtt(
+            &temp_dir,
+            "test.vtt",
+            "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v Alice>Hello</v>\n",
+        );
+
+        let vtt_to_md = get_vtt_to_md_path();
+        let (mut cmd, config_root) = new_test_command(&vtt_to_md);
+        write_test_config(&config_root, "include_timestamps = \"each\"\n");
+
+        let output = cmd
+            .arg(input_path.to_str().unwrap())
+            .arg("--stdout")
+            .output()
+            .expect("Failed to execute vtt-to-md");
+
+        assert!(output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("[00:00:00.000]"));
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("Warning:"));
+        assert!(stderr.contains("legacy"));
     }
 }
