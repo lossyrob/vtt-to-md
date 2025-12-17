@@ -1,3 +1,13 @@
+//! Configuration defaults resolution.
+//!
+//! This module supports an opt-in, user-level default for timestamp inclusion.
+//!
+//! Supported sources (highest to lowest precedence):
+//! 1. Environment variable `VTT_TO_MD_INCLUDE_TIMESTAMPS=none|first|each`
+//! 2. Per-user config file `vtt-to-md/config.toml` with `include_timestamps = "none"|"first"|"each"`
+//!
+//! The built-in default remains `none` when no configured default is present.
+
 use crate::cli::TimestampMode;
 use std::fs;
 use std::path::PathBuf;
@@ -8,7 +18,15 @@ const APP_DIR_NAME: &str = "vtt-to-md";
 const CONFIG_FILE_NAME: &str = "config.toml";
 const CONFIG_KEY_INCLUDE_TIMESTAMPS: &str = "include_timestamps";
 
-pub fn resolve_default_timestamp_mode() -> (Option<TimestampMode>, Vec<String>) {
+/// Resolve a configured default timestamp mode (env var > config file).
+///
+/// This is only intended to be used when the CLI flag `--include-timestamps` was
+/// omitted, so that explicit CLI usage always wins.
+///
+/// Returns a tuple of:
+/// - `Option<TimestampMode>`: the configured default, if any
+/// - `Vec<String>`: warnings suitable for printing to stderr
+pub(crate) fn resolve_default_timestamp_mode() -> (Option<TimestampMode>, Vec<String>) {
     let mut warnings = Vec::new();
 
     // 1) Environment variable (highest non-CLI precedence)
