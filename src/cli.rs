@@ -74,6 +74,13 @@ pub struct Args {
     )]
     pub no_filter_unknown: bool,
 
+    /// Remove filler words and speech disfluencies from the transcript
+    #[arg(
+        long,
+        help = "Remove filler words and speech disfluencies (uh, um, you know, etc.)"
+    )]
+    pub remove_fillers: bool,
+
     /// Disable auto-increment of output filename on collision
     #[arg(
         long,
