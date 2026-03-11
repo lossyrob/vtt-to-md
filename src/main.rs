@@ -4,6 +4,7 @@ mod cli;
 mod config;
 mod consolidator;
 mod error;
+mod filler;
 mod markdown;
 mod parser;
 
@@ -47,6 +48,15 @@ fn main() -> ExitCode {
 
     warnings.extend(config_warnings);
 
+    // Resolve effective remove_fillers (CLI > env > config > built-in default)
+    let (configured_remove_fillers, rf_warnings) = if args.remove_fillers {
+        (None, Vec::new())
+    } else {
+        config::resolve_default_remove_fillers()
+    };
+
+    warnings.extend(rf_warnings);
+
     for warning in warnings {
         eprintln!("Warning: {warning}");
     }
@@ -56,8 +66,10 @@ fn main() -> ExitCode {
         .map(|setting| setting.value)
         .unwrap_or(configured_default.unwrap_or(false));
 
+    let effective_remove_fillers = args.remove_fillers || configured_remove_fillers.unwrap_or(false);
+
     // Run the conversion
-    if let Err(e) = run_conversion(&args, effective_include_timestamps) {
+    if let Err(e) = run_conversion(&args, effective_include_timestamps, effective_remove_fillers) {
         eprintln!("Error: {}", e);
         return e.exit_code();
     }
@@ -66,7 +78,11 @@ fn main() -> ExitCode {
 }
 
 /// Run the VTT to Markdown conversion pipeline.
-fn run_conversion(args: &Args, include_timestamps: bool) -> Result<(), error::VttError> {
+fn run_conversion(
+    args: &Args,
+    include_timestamps: bool,
+    remove_fillers: bool,
+) -> Result<(), error::VttError> {
     // Parse the VTT file
     let vtt_document = parser::VttDocument::parse(&args.input)?;
 
@@ -89,6 +105,20 @@ fn run_conversion(args: &Args, include_timestamps: bool) -> Result<(), error::Vt
 
     // Consolidate speaker segments
     let segments = consolidator::consolidate_cues(&cues, &args.unknown_speaker, include_timestamps);
+
+    // Remove filler words if requested
+    let segments = if remove_fillers {
+        segments
+            .into_iter()
+            .map(|mut seg| {
+                seg.text = filler::remove_fillers(&seg.text);
+                seg
+            })
+            .filter(|seg| !seg.text.trim().is_empty())
+            .collect()
+    } else {
+        segments
+    };
 
     // Format as Markdown
     let markdown_content = markdown::format_markdown(&segments, include_timestamps);

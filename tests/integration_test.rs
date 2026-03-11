@@ -46,6 +46,7 @@ fn new_test_command(vtt_to_md: &PathBuf) -> (Command, TempDir) {
 
     // Ensure tests are not affected by user environment/config.
     cmd.env_remove("VTT_TO_MD_INCLUDE_TIMESTAMPS");
+    cmd.env_remove("VTT_TO_MD_REMOVE_FILLERS");
 
     // Point the per-user config directory at a temp folder.
     #[cfg(target_os = "windows")]
@@ -922,4 +923,228 @@ mod include_timestamps_defaults_windows {
         assert!(stderr.contains("Warning:"));
         assert!(stderr.contains("legacy"));
     }
+}
+
+// ── Remove Fillers Tests ─────────────────────────────────────────────────
+
+const VTT_WITH_FILLERS: &str = "\
+WEBVTT
+
+00:00:00.000 --> 00:00:02.000
+<v Alice>Uh, I think we should start.</v>
+
+00:00:02.000 --> 00:00:04.000
+<v Bob>Mhm.</v>
+
+00:00:04.000 --> 00:00:06.000
+<v Bob>Um, yeah that sounds good.</v>
+
+00:00:06.000 --> 00:00:08.000
+<v Alice>The, uh, performance is, you know, important.</v>
+";
+
+#[test]
+fn test_remove_fillers_flag_removes_fillers() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_path = create_test_vtt(&temp_dir, "fillers.vtt", VTT_WITH_FILLERS);
+
+    let vtt_to_md = get_vtt_to_md_path();
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
+        .arg(input_path.to_str().unwrap())
+        .arg("--stdout")
+        .arg("--remove-fillers")
+        .output()
+        .expect("Failed to execute vtt-to-md");
+
+    assert!(
+        output.status.success(),
+        "Command failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Fillers should be removed
+    assert!(
+        !stdout.contains("Uh,"),
+        "Filler 'Uh' should be removed: {stdout}"
+    );
+    assert!(
+        !stdout.contains("Um,"),
+        "Filler 'Um' should be removed: {stdout}"
+    );
+    assert!(
+        !stdout.contains("you know"),
+        "Filler 'you know' should be removed: {stdout}"
+    );
+
+    // Content should be preserved
+    assert!(
+        stdout.contains("I think we should start"),
+        "Non-filler content should be preserved: {stdout}"
+    );
+    assert!(
+        stdout.contains("sounds good"),
+        "Non-filler content should be preserved: {stdout}"
+    );
+}
+
+#[test]
+fn test_fillers_preserved_without_flag() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_path = create_test_vtt(&temp_dir, "fillers.vtt", VTT_WITH_FILLERS);
+
+    let vtt_to_md = get_vtt_to_md_path();
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
+        .arg(input_path.to_str().unwrap())
+        .arg("--stdout")
+        .output()
+        .expect("Failed to execute vtt-to-md");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Fillers should still be present without the flag
+    assert!(
+        stdout.contains("Uh,"),
+        "Fillers should be preserved without --remove-fillers: {stdout}"
+    );
+    assert!(
+        stdout.contains("you know"),
+        "Fillers should be preserved without --remove-fillers: {stdout}"
+    );
+}
+
+#[test]
+fn test_remove_fillers_drops_empty_turns() {
+    let vtt_content = "\
+WEBVTT
+
+00:00:00.000 --> 00:00:02.000
+<v Alice>Hello there.</v>
+
+00:00:02.000 --> 00:00:04.000
+<v Bob>Uh.</v>
+
+00:00:04.000 --> 00:00:06.000
+<v Bob>Mhm.</v>
+
+00:00:06.000 --> 00:00:08.000
+<v Alice>How are you?</v>
+";
+
+    let temp_dir = TempDir::new().unwrap();
+    let input_path = create_test_vtt(&temp_dir, "empty_turns.vtt", vtt_content);
+
+    let vtt_to_md = get_vtt_to_md_path();
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
+        .arg(input_path.to_str().unwrap())
+        .arg("--stdout")
+        .arg("--remove-fillers")
+        .output()
+        .expect("Failed to execute vtt-to-md");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Bob's turn should be completely removed (was only fillers)
+    assert!(
+        !stdout.contains("**Bob:**"),
+        "Bob's filler-only turn should be removed: {stdout}"
+    );
+
+    // Alice's turns should remain
+    assert!(stdout.contains("**Alice:** Hello there."));
+    assert!(stdout.contains("**Alice:** How are you?"));
+}
+
+#[test]
+fn test_remove_fillers_mid_sentence() {
+    let vtt_content = "\
+WEBVTT
+
+00:00:00.000 --> 00:00:04.000
+<v Alice>The thing is, um, we need to, uh, fix the bug.</v>
+";
+
+    let temp_dir = TempDir::new().unwrap();
+    let input_path = create_test_vtt(&temp_dir, "mid_sentence.vtt", vtt_content);
+
+    let vtt_to_md = get_vtt_to_md_path();
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
+        .arg(input_path.to_str().unwrap())
+        .arg("--stdout")
+        .arg("--remove-fillers")
+        .output()
+        .expect("Failed to execute vtt-to-md");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(
+        !stdout.contains("um"),
+        "Mid-sentence filler should be removed: {stdout}"
+    );
+    assert!(
+        !stdout.contains("uh"),
+        "Mid-sentence filler should be removed: {stdout}"
+    );
+    assert!(
+        stdout.contains("fix the bug"),
+        "Non-filler content should remain: {stdout}"
+    );
+}
+
+#[test]
+fn test_remove_fillers_env_var() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_path = create_test_vtt(&temp_dir, "fillers.vtt", VTT_WITH_FILLERS);
+
+    let vtt_to_md = get_vtt_to_md_path();
+    let (mut cmd, _config_root) = new_test_command(&vtt_to_md);
+    let output = cmd
+        .env("VTT_TO_MD_REMOVE_FILLERS", "true")
+        .arg(input_path.to_str().unwrap())
+        .arg("--stdout")
+        .output()
+        .expect("Failed to execute vtt-to-md");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Fillers should be removed via env var
+    assert!(
+        !stdout.contains("Uh,"),
+        "Fillers should be removed via env var: {stdout}"
+    );
+}
+
+#[test]
+fn test_remove_fillers_config_file() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_path = create_test_vtt(&temp_dir, "fillers.vtt", VTT_WITH_FILLERS);
+
+    let vtt_to_md = get_vtt_to_md_path();
+    let (mut cmd, config_root) = new_test_command(&vtt_to_md);
+
+    write_test_config(&config_root, "remove_fillers = true\n");
+
+    let output = cmd
+        .arg(input_path.to_str().unwrap())
+        .arg("--stdout")
+        .output()
+        .expect("Failed to execute vtt-to-md");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Fillers should be removed via config file
+    assert!(
+        !stdout.contains("Uh,"),
+        "Fillers should be removed via config: {stdout}"
+    );
 }

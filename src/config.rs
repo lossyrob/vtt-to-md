@@ -14,9 +14,11 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 const ENV_INCLUDE_TIMESTAMPS: &str = "VTT_TO_MD_INCLUDE_TIMESTAMPS";
+const ENV_REMOVE_FILLERS: &str = "VTT_TO_MD_REMOVE_FILLERS";
 const APP_DIR_NAME: &str = "vtt-to-md";
 const CONFIG_FILE_NAME: &str = "config.toml";
 const CONFIG_KEY_INCLUDE_TIMESTAMPS: &str = "include_timestamps";
+const CONFIG_KEY_REMOVE_FILLERS: &str = "remove_fillers";
 
 /// Resolve a configured default `include_timestamps` setting (env var > config file).
 ///
@@ -90,6 +92,97 @@ pub(crate) fn resolve_default_include_timestamps() -> (Option<bool>, Vec<String>
     }
 }
 
+/// Resolve a configured default `remove_fillers` setting (env var > config file).
+///
+/// Only used when the CLI flag `--remove-fillers` was not provided.
+///
+/// Returns a tuple of:
+/// - `Option<bool>`: the configured default, if any
+/// - `Vec<String>`: warnings suitable for printing to stderr
+pub(crate) fn resolve_default_remove_fillers() -> (Option<bool>, Vec<String>) {
+    let mut warnings = Vec::new();
+
+    // 1) Environment variable
+    if let Ok(raw_value) = std::env::var(ENV_REMOVE_FILLERS) {
+        let value = raw_value.trim();
+        if value.is_empty() {
+            warnings.push(format!(
+                "{ENV_REMOVE_FILLERS} is set but empty; ignoring"
+            ));
+        } else {
+            match parse_bool_value(value) {
+                Some(b) => return (Some(b), warnings),
+                None => warnings.push(format!(
+                    "invalid {ENV_REMOVE_FILLERS}='{value}' (expected true/false); ignoring"
+                )),
+            }
+        }
+    }
+
+    // 2) Config file
+    let Some(config_path) = config_file_path() else {
+        return (None, warnings);
+    };
+
+    if !config_path.exists() {
+        return (None, warnings);
+    }
+
+    let contents = match fs::read_to_string(&config_path) {
+        Ok(contents) => contents,
+        Err(err) => {
+            warnings.push(format!(
+                "failed to read config file '{}': {err}; ignoring",
+                config_path.display()
+            ));
+            return (None, warnings);
+        }
+    };
+
+    match parse_config_remove_fillers(&contents) {
+        Ok(value) => (value, warnings),
+        Err(err) => {
+            warnings.push(format!(
+                "invalid config file '{}': {err}; ignoring",
+                config_path.display()
+            ));
+            (None, warnings)
+        }
+    }
+}
+
+fn parse_bool_value(s: &str) -> Option<bool> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" | "y" | "on" => Some(true),
+        "false" | "0" | "no" | "n" | "off" => Some(false),
+        _ => None,
+    }
+}
+
+fn parse_config_remove_fillers(contents: &str) -> Result<Option<bool>, String> {
+    let value: toml::Value = contents
+        .parse()
+        .map_err(|err| format!("TOML parse error: {err}"))?;
+
+    let Some(rf_value) = value.get(CONFIG_KEY_REMOVE_FILLERS) else {
+        return Ok(None);
+    };
+
+    if let Some(b) = rf_value.as_bool() {
+        return Ok(Some(b));
+    }
+
+    if let Some(s) = rf_value.as_str() {
+        return parse_bool_value(s)
+            .map(|b| Some(b))
+            .ok_or_else(|| format!("invalid {CONFIG_KEY_REMOVE_FILLERS}='{s}' (expected true/false)"));
+    }
+
+    Err(format!(
+        "'{CONFIG_KEY_REMOVE_FILLERS}' must be a boolean or string"
+    ))
+}
+
 fn config_file_path() -> Option<PathBuf> {
     let base_dir = if cfg!(target_os = "windows") {
         std::env::var_os("APPDATA").map(PathBuf::from)
@@ -145,6 +238,7 @@ fn parse_config_include_timestamps(
 #[cfg(test)]
 mod tests {
     use super::parse_config_include_timestamps;
+    use super::parse_config_remove_fillers;
 
     #[test]
     fn parse_config_include_timestamps_missing_key_returns_none() {
@@ -182,5 +276,35 @@ mod tests {
     fn parse_config_include_timestamps_rejects_non_bool_non_string() {
         let contents = "include_timestamps = 123\n";
         assert!(parse_config_include_timestamps(contents).is_err());
+    }
+
+    #[test]
+    fn parse_config_remove_fillers_missing_key_returns_none() {
+        let contents = "other = 'x'\n";
+        assert_eq!(parse_config_remove_fillers(contents).unwrap(), None);
+    }
+
+    #[test]
+    fn parse_config_remove_fillers_accepts_boolean() {
+        let contents = "remove_fillers = true\n";
+        assert_eq!(parse_config_remove_fillers(contents).unwrap(), Some(true));
+
+        let contents = "remove_fillers = false\n";
+        assert_eq!(parse_config_remove_fillers(contents).unwrap(), Some(false));
+    }
+
+    #[test]
+    fn parse_config_remove_fillers_accepts_string_boolean() {
+        let contents = "remove_fillers = \"true\"\n";
+        assert_eq!(parse_config_remove_fillers(contents).unwrap(), Some(true));
+    }
+
+    #[test]
+    fn parse_config_remove_fillers_rejects_invalid() {
+        let contents = "remove_fillers = \"bogus\"\n";
+        assert!(parse_config_remove_fillers(contents).is_err());
+
+        let contents = "remove_fillers = 123\n";
+        assert!(parse_config_remove_fillers(contents).is_err());
     }
 }
